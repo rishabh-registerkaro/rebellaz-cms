@@ -3,6 +3,8 @@ import { withMongoId } from "@/app/lib/utils/serialize";
 import { requireRole } from "@/app/lib/utils/authorization";
 import { CONTENT_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags } from "@/app/lib/utils/revalidateFrontend";
+import { cacheGet, cacheSet, cacheClear } from "@/app/lib/utils/responseCache";
+import { withContactDefaults } from "@/app/lib/content/contact-content";
 import { NextResponse, NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 
@@ -42,17 +44,34 @@ export async function OPTIONS(req: NextRequest) {
 // Public — frontend fetches this
 export async function GET(req: NextRequest) {
     try {
-        const doc = await prisma.contactPage.findFirst();
         const corsHeaders = getCorsHeaders(req.headers.get("origin"));
 
-        if (!doc) {
-            return NextResponse.json({ success: true, data: null }, { headers: corsHeaders });
+        const cached = cacheGet("contact-page", "singleton");
+        if (cached) {
+            return NextResponse.json(cached, {
+                headers: { ...corsHeaders, "x-cache": "HIT" },
+            });
         }
 
-        return NextResponse.json(
-            { success: true, data: { metaTitle: doc.metaTitle, metaDescription: doc.metaDescription, content: doc.content } },
-            { headers: corsHeaders }
-        );
+        const doc = await prisma.contactPage.findFirst();
+
+        // Always a complete document, even before anyone opens the editor:
+        // returning a raw (or null) content object made the live page render
+        // `undefined` for any field the stored copy predates.
+        const payload = {
+            success: true,
+            data: {
+                metaTitle: doc?.metaTitle ?? null,
+                metaDescription: doc?.metaDescription ?? null,
+                content: withContactDefaults(doc?.content),
+            },
+        };
+
+        cacheSet("contact-page", "singleton", payload);
+
+        return NextResponse.json(payload, {
+            headers: { ...corsHeaders, "x-cache": "MISS" },
+        });
     } catch (error) {
         console.error("GET /api/contact error:", error);
         return NextResponse.json({ success: false, message: "Failed to fetch contact page." }, { status: 500 });
@@ -82,6 +101,7 @@ export async function POST(req: NextRequest) {
             },
         });
 
+        cacheClear("contact-page");
         await revalidateFrontendTags(["contact-page"]);
 
         return NextResponse.json({ success: true, data: withMongoId(doc) }, { status: 201 });
@@ -100,11 +120,30 @@ export async function PATCH(req: NextRequest) {
         const body = await req.json();
 
         const doc = await prisma.contactPage.findFirst();
+
+        // Singleton page: the row is created on first save rather than needing
+        // a separate POST. Requiring one meant a fresh install could never save
+        // this page at all — the editor only ever sends an update.
         if (!doc) {
-            return NextResponse.json(
-                { success: false, message: "Contact page not found. Use POST to create it first." },
-                { status: 404 }
-            );
+            const created = await prisma.contactPage.create({
+                data: {
+                    metaTitle: body.metaTitle ?? null,
+                    metaDescription: body.metaDescription ?? null,
+                    content: jsonValue(withContactDefaults(body.content)),
+                },
+            });
+
+            cacheClear("contact-page");
+            await revalidateFrontendTags(["contact-page"]);
+
+            return NextResponse.json({
+                success: true,
+                data: {
+                    metaTitle: created.metaTitle,
+                    metaDescription: created.metaDescription,
+                    content: created.content,
+                },
+            });
         }
 
         const data: Prisma.ContactPageUpdateInput = {};
@@ -120,6 +159,7 @@ export async function PATCH(req: NextRequest) {
             data,
         });
 
+        cacheClear("contact-page");
         await revalidateFrontendTags(["contact-page"]);
 
         return NextResponse.json({ success: true, data: { metaTitle: updated.metaTitle, metaDescription: updated.metaDescription, content: updated.content } });
