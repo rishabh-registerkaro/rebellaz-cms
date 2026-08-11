@@ -1,0 +1,375 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Rebellabz theme
+   ───────────────────────────────────────────────────────────────────────
+   Matches the public site (rebel-tau.vercel.app): near-black canvas,
+   hairline-bordered dark panels, one vivid coral-red accent, and rounded
+   corners.
+
+   The dashboard was authored dark-first: ~2,000 hardcoded `slate-*`,
+   `indigo-*` and `text-white` utilities across 54 files. That original
+   intent is what this palette restores, so the scales below carry their
+   NATURAL dark meaning again:
+     - `slate-900` = canvas, `slate-800` = card surface, `slate-700` = input
+     - `slate-400` = muted text, `text-white` = headings (left alone)
+     - `indigo-*` now renders as Rebellabz red
+   New work should prefer the --rl-* tokens below over slate/indigo.
+
+   To retune the brand colour, change --rl-red and the indigo/blue ramp
+   midpoints — nothing else hardcodes it.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Brand — the coral red from the site's CTAs and logo mark */
+  --rl-red: #ff4438;
+  --rl-red-strong: #ed3122;
+  --rl-red-soft: #3a1611;  /* dark tint for accent fills on the canvas */
+  --rl-amber: #f59e0b;     /* the one complementary hue (superadmin badge) */
+
+  /* Neutrals — a legibility-first dark ramp, not a pitch-black one.
+     Each step is far enough from the last to be seen: cards must read as
+     raised off the page, hairlines must actually draw, and helper text must
+     stay comfortable to read for a full working day. Secondary copy uses
+     --rl-muted, which clears WCAG AA on both canvas and surface. */
+  --rl-ink: #ffffff;      /* headings and body text */
+  --rl-ink-2: #eceef1;    /* slightly recessed body copy */
+  --rl-muted: #a8aeb8;    /* secondary / helper text */
+  --rl-border: #333842;   /* the single hairline border used everywhere */
+  --rl-surface: #181b20;  /* cards, panels, sidebar — lifted off the canvas */
+  --rl-canvas: #0d0f12;   /* page background */
+  --rl-canvas-2: #212530; /* recessed areas, inputs, progress tracks */
+}
+
+@theme {
+  /* ── Rounded corners ───────────────────────────────────────────────
+     The site leans on generous radii — pill buttons and soft-cornered
+     cards — so the scale is restored rather than flattened. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --radius-4xl: 32px;
+
+  /* ── slate → neutral near-black ramp ───────────────────────────────
+     Tailwind's own slate is blue-tinted; the site's greys are neutral.
+     900 = canvas, 800 = card surface, 700 = input/secondary button,
+     600 = border, 400 = muted text, 50–200 = light text on dark. */
+  --color-slate-50: #fafbfc;
+  --color-slate-100: #f3f5f7;
+  --color-slate-200: #e8ebee;
+  --color-slate-300: #d7dbe0;
+  --color-slate-400: #a8aeb8;
+  --color-slate-500: #7c8490;
+  --color-slate-600: #333842;
+  --color-slate-700: #212530;
+  --color-slate-800: #181b20;
+  --color-slate-900: #0d0f12;
+  --color-slate-950: #08090a;
+
+  /* gray/zinc are used the same dark-first way in a few files */
+  --color-gray-200: #e8ebee;
+  --color-gray-300: #d7dbe0;
+  --color-gray-400: #a8aeb8;
+  --color-gray-600: #333842;
+  --color-gray-700: #212530;
+  --color-gray-800: #181b20;
+  --color-gray-900: #0d0f12;
+  --color-zinc-50: #fafbfc;
+
+  /* ── indigo/blue/purple → Rebellabz red ────────────────────────────
+     Every accent in the CMS was indigo. Remapping the ramp rebrands
+     buttons, active nav items, focus rings and links in one move. */
+  --color-indigo-50: #fff0ee;
+  --color-indigo-100: #ffe1dd;
+  --color-indigo-200: #ffc7c0;
+  --color-indigo-300: #ff9c91;
+  --color-indigo-400: #ff6d5d;
+  --color-indigo-500: #ff4438;
+  --color-indigo-600: #ed3122;
+  --color-indigo-700: #c62518;
+  --color-indigo-800: #a11f15;
+  --color-indigo-900: #7d1a13;
+
+  --color-blue-300: #ff9c91;
+  --color-blue-400: #ff6d5d;
+  --color-blue-500: #ff4438;
+  --color-blue-600: #ed3122;
+
+  /* purple is only used for the "superadmin" badge. Kept amber so the one
+     privileged role still reads as distinct from the brand red rather than
+     blending into every other accent. -200/-300/-400 are its text colour
+     on the -500/20 tint, so they stay light. */
+  --color-purple-200: #fde68a;
+  --color-purple-300: #fcd34d;
+  --color-purple-400: #fbbf24;
+  --color-purple-500: #f59e0b;
+  --color-purple-600: #d97706;
+  --color-violet-500: #f59e0b;
+  --color-violet-600: #d97706;
+
+  /* ── Status colours ────────────────────────────────────────────────
+     Light shades read as text on dark panels; -500/-600 stay as badge
+     fills carrying white text. */
+  --color-red-300: #fca5a5;
+  --color-red-400: #f87171;
+  --color-green-200: #bbf7d0;
+  --color-green-300: #86efac;
+  --color-green-400: #4ade80;
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-yellow-200: #fef08a;
+  --color-yellow-300: #fde047;
+  --color-yellow-400: #facc15;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+}
+
+:root {
+  --radius: 12px;
+  --background: var(--rl-canvas);
+  --foreground: var(--rl-ink);
+  --card: var(--rl-surface);
+  --card-foreground: var(--rl-ink);
+  --popover: var(--rl-surface);
+  --popover-foreground: var(--rl-ink);
+  --primary: var(--rl-red);
+  --primary-foreground: #ffffff;
+  --secondary: var(--rl-canvas-2);
+  --secondary-foreground: var(--rl-ink);
+  --muted: var(--rl-canvas-2);
+  --muted-foreground: var(--rl-muted);
+  --accent: var(--rl-red-soft);
+  --accent-foreground: #ff9c91;
+  --destructive: #f87171;
+  --border: var(--rl-border);
+  --input: var(--rl-border);
+  --ring: var(--rl-red);
+  --chart-1: #ff4438;
+  --chart-2: #f59e0b;
+  --chart-3: #cbd0d6;
+  --chart-4: #9096a0;
+  --chart-5: #c62518;
+
+  /* Sidebar is a dark panel separated by a hairline, matching the
+     floating header on the public Rebellabz site. */
+  --sidebar: var(--rl-surface);
+  --sidebar-foreground: var(--rl-ink);
+  --sidebar-primary: var(--rl-red);
+  --sidebar-primary-foreground: #ffffff;
+  /* Hover needs a lift off the panel or it reads as "nothing happened":
+     a lighter fill, with the red reserved for the active item. */
+  --sidebar-accent: var(--rl-canvas-2);
+  --sidebar-accent-foreground: #ff9c91;
+  --sidebar-border: var(--rl-border);
+  --sidebar-ring: var(--rl-red);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Interactive affordances. Buttons rendered from shadcn primitives and
+     raw <button> elements were inconsistent about this. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"],
+  [role="option"],
+  [role="tab"],
+  summary,
+  select,
+  a[href],
+  label[for],
+  input[type="checkbox"],
+  input[type="radio"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Targeted overrides
+   The utilities that a scale remap alone cannot fix.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* NOTE ON THE `:root` PREFIX BELOW
+   Every override here targets a class Tailwind also emits. With a bare
+   selector the minifier merges the two rules and keeps Tailwind's value,
+   silently dropping the override. The `:root ` prefix makes the selector
+   distinct (and one point more specific), so it survives the build. Verify
+   after any change with:
+     grep -oE '\.bg-white\{[^}]*\}' .next/static/chunks/*.css */
+
+/* A few panels were written light-first during the previous theme
+   (`bg-white`, `text-black`). On a near-black canvas they blow out, so they
+   are pulled back to the dark surface. The `/opacity` forms are excluded —
+   `bg-white/5` is glassmorphism and works as authored on dark. */
+:root .bg-white {
+  background-color: var(--rl-surface);
+}
+
+:root .text-black {
+  color: var(--rl-ink);
+}
+
+/* `slate` doubles as both surfaces and borders, and one ramp cannot satisfy
+   both. Borders collapse to the single hairline colour. */
+:root .border-slate-400,
+:root .border-slate-500,
+:root .border-slate-700,
+:root .border-slate-800,
+:root .border-slate-900,
+:root .border-gray-700 {
+  border-color: var(--rl-border);
+}
+
+/* A disabled button keeps its enabled background class in the class list, so
+   it would otherwise still paint white text on a greyed fill. Disabled
+   controls get muted ink whatever their base colour. Specificity is (0,3,1)
+   via the [class] attribute, so no !important is needed. */
+:root button:disabled[class],
+:root button[disabled][class],
+:root [role="button"][aria-disabled="true"][class] {
+  color: var(--rl-muted);
+  -webkit-text-fill-color: var(--rl-muted);
+}
+
+/* Elevation on a dark canvas has to come from a deeper shadow — a soft grey
+   one is simply invisible against black. */
+:root .shadow-sm {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 40%);
+}
+
+:root .shadow-lg {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 40%),
+    0 8px 24px rgb(0 0 0 / 45%);
+}
+
+:root .shadow-xl {
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 45%),
+    0 12px 32px rgb(0 0 0 / 55%);
+}
+
+:root .shadow-2xl {
+  box-shadow:
+    0 4px 8px rgb(0 0 0 / 50%),
+    0 24px 64px rgb(0 0 0 / 65%);
+}
+
+/* Disabled fields: grey the control instead of making its value unreadable.
+   `-webkit-text-fill-color` is the important one — WebKit/Blink apply their
+   own fill colour to disabled inputs and it outranks `color`. */
+:root input:disabled,
+:root textarea:disabled,
+:root select:disabled,
+:root input[readonly],
+:root textarea[readonly] {
+  opacity: 1;
+  color: var(--rl-ink-2);
+  -webkit-text-fill-color: var(--rl-ink-2);
+  background-color: var(--rl-canvas-2);
+}
+
+/* Native controls (date pickers, scrollbars, autofill) still render with a
+   light UA theme inside a dark page without this. */
+:root {
+  color-scheme: dark;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Rich-text editor output
+   ═══════════════════════════════════════════════════════════════════════ */
+.prose :where(table):not(:where([class~="not-prose"] *)) {
+  @apply border;
+  border-color: var(--rl-border);
+}
+
+.prose :where(th, td):not(:where([class~="not-prose"] *)) {
+  @apply border px-4 py-2 text-left;
+  border-color: var(--rl-border);
+}
+
+.prose :where(th):not(:where([class~="not-prose"] *)) {
+  background-color: var(--rl-canvas-2);
+  color: var(--rl-ink);
+}
+
+.prose :where(code):not(:where([class~="not-prose"] *)) {
+  background-color: var(--rl-canvas-2);
+  color: #ff9c91;
+  @apply px-1;
+}
+
+.prose pre {
+  background-color: var(--rl-canvas-2);
+  border: 1px solid var(--rl-border);
+  color: var(--rl-ink);
+  @apply p-4 overflow-x-auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Text selection — a red tint dark enough to keep white text readable,
+   including in the disabled inputs that also carry `opacity-60`.
+   ═══════════════════════════════════════════════════════════════════════ */
+::selection {
+  background-color: #7d1a13;
+  color: #ffffff;
+}
+
+input::selection,
+textarea::selection {
+  background-color: #7d1a13;
+  color: #ffffff;
+}

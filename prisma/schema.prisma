@@ -1,0 +1,380 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum Role {
+  superadmin
+  admin
+  editor
+  contributor
+}
+
+enum PublishStatus {
+  draft
+  published
+}
+
+enum LeadStatus {
+  new
+  contacted
+  converted
+  lost
+}
+
+// ─────────────────────────── Models ───────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  role      Role     @default(contributor)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts         Post[]
+  servicePages  ServicePage[]
+  packageBlocks PackageBlock[]
+  careers       Career[]
+
+  @@map("users")
+}
+
+model Post {
+  id               String        @id @default(cuid())
+  title            String        @db.VarChar(500)
+  slug             String        @unique
+  excerpt          String?       @db.Text
+  content          String?       @db.LongText
+  featuredImage    String?       @db.Text
+  status           PublishStatus @default(draft)
+  authorId         String
+  author           User          @relation(fields: [authorId], references: [id])
+  categories       Category[]    @relation("PostCategories")
+  // FAQ repeater: array of {question, answer}
+  faqItems         Json?         @map("faq_items")
+  // ACF-style fully flexible fields
+  additionalFields Json?
+  // JSON-LD schema objects (array)
+  schemaJson       Json?         @map("schema")
+  publishedAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([status])
+  @@index([authorId])
+  @@index([status, publishedAt])
+  // Paginated dashboard listing sorts by newest first
+  @@index([createdAt])
+  @@map("posts")
+}
+
+/// Marketing copy around the roles listing on /careers — hero, benefits,
+/// hiring steps, testimonial headers and the pipeline block.
+///
+/// A singleton: exactly one row, same pattern as AboutPage / ContactPage. The
+/// whole page lives in one JSON column so adding a benefit card or renaming a
+/// section is a content change, never a migration.
+/// Shape: app/lib/content/careers-content.ts → CareersPageContent
+model CareersPage {
+  id              String   @id @default(cuid())
+  metaTitle       String?
+  metaDescription String?  @db.Text
+  content         Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("careers_pages")
+}
+
+/// Editable discipline taxonomy for careers — the tabs on the public /careers
+/// page ("Oil & Gas", "Renewables", …). Previously a hardcoded constant, so
+/// adding one meant a code change.
+///
+/// `Career.category` deliberately stores the discipline NAME rather than a
+/// foreign key: the public API contract with the frontend is a plain string,
+/// and keeping it denormalized means no migration of existing rows and no
+/// join on the hot listing query. The cost is that renaming a discipline has
+/// to cascade — the PUT handler updates every career carrying the old name in
+/// the same transaction.
+model Discipline {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String? @db.Text
+  /// Controls tab order on the frontend; ties broken by name.
+  position    Int     @default(0)
+  /// Hidden disciplines stay assigned to existing roles but can't be chosen
+  /// for new ones, so a discipline can be retired without breaking history.
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@index([position])
+  @@map("disciplines")
+}
+
+/// An open role shown on the frontend /careers listing and /careers/[slug]
+/// detail page. Field names mirror the frontend `Role` type in
+/// Rebellabz/app/careers/roles-data.ts so the client API is a drop-in
+/// replacement for that static file.
+///
+/// `posted` and `days` are NOT stored — the frontend needs them for display and
+/// sorting, but they are derived from `publishedAt` at read time so they can
+/// never go stale.
+model Career {
+  id       String  @id @default(cuid())
+  title    String  @db.VarChar(500)
+  slug     String  @unique
+  /// Discipline, e.g. "Marine & Offshore". Plain string, not an enum, so adding
+  /// a discipline is a content change rather than a migration.
+  category String
+  location String
+  /// Rotational | Contract | Staff
+  type     String
+  /// Free text: "6/6 rotation", "24-month", "Residential".
+  duration String
+  /// Display string including currency, e.g. "£700–820" or "$160–190k".
+  salary   String
+  /// Rate period appended to salary, e.g. "/day" or "/yr".
+  unit     String  @default("/day")
+  featured Boolean @default(false)
+
+  /// Job description body for the detail page, authored in the TipTap editor
+  /// and stored as HTML — same as Post.content.
+  description String? @db.LongText
+  /// Short plain-text blurb used for cards and meta description fallback.
+  summary     String? @db.Text
+
+  metaTitle       String?
+  metaDescription String? @db.Text
+
+  status      PublishStatus @default(draft)
+  publishedAt DateTime?
+  authorId    String
+  author      User          @relation(fields: [authorId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([status])
+  @@index([authorId])
+  @@index([category])
+  @@index([featured])
+  // Public listing: published roles, newest first
+  @@index([status, publishedAt])
+  // Paginated dashboard listing sorts by newest first
+  @@index([createdAt])
+  @@map("careers")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  color     String   @default("")
+  parentId  String?  @map("parent_category_id")
+  parent    Category?  @relation("CategoryParent", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryParent")
+  posts     Post[]     @relation("PostCategories")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+  // Paginated dashboard listing sorts by newest first
+  @@index([createdAt])
+  @@map("categories")
+}
+
+model Lead {
+  id      String     @id @default(cuid())
+  name    String
+  email   String
+  phoneNo String
+  status  LeadStatus @default(new)
+  // Which website form this lead came from (e.g. "Contact — Request a Quote")
+  leadSource String @default("Website")
+  // Form-specific fields as {"Field Label": value} pairs — differs per form
+  // (dropdowns, subject, message…), so new forms never need schema changes.
+  formData Json? @map("form_data")
+
+  // CV / resume attached on the website form. The file itself lives on
+  // Hostinger under HOSTINGER_LEAD_PATH; this is the public URL the dashboard
+  // links to. attachmentName keeps the visitor's original filename for display,
+  // since the stored name is prefixed with a timestamp + random suffix.
+  attachmentUrl  String? @map("attachment_url") @db.Text
+  attachmentName String? @map("attachment_name")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([email])
+  // Paginated dashboard listing: newest first, optionally filtered by status
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@map("leads")
+}
+
+model Otp {
+  id        String   @id @default(cuid())
+  email     String
+  otp       String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // NOTE: MongoDB used a TTL index to auto-delete expired OTPs.
+  // In MySQL, expired rows are filtered in queries and cleaned up
+  // opportunistically in the request-otp route.
+  @@index([email, verified])
+  @@index([email, otp, verified])
+  @@index([expiresAt])
+  @@map("otps")
+}
+
+model MediaAsset {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  filename     String
+  format       String
+  resourceType String   @map("resource_type")
+  bytes        Int
+  url          String   @db.Text
+  createdAt    DateTime @default(now())
+
+  // Paginated media grid sorts by newest first
+  @@index([createdAt])
+  @@map("media_assets")
+}
+
+// Singleton page documents — content kept as JSON page-builder blobs
+
+model ContactPage {
+  id              String   @id @default(cuid())
+  metaTitle       String?
+  metaDescription String?  @db.Text
+  content         Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("contact_pages")
+}
+
+model TermsPolicy {
+  id                   String   @id @default(cuid())
+  metaTitle            String?
+  metaDescription      String?  @db.Text
+  title                String?
+  // Text, not the default varchar(191): this is an intro paragraph, and MySQL
+  // silently truncated anything longer — the shipped subtitle lost its last
+  // 40 characters mid-sentence before this was caught.
+  subTitle             String?  @db.Text
+  // Each is { body: "<html>" } from the TipTap editor. Three separate
+  // policies rather than one document: they are legally distinct, get updated
+  // on different cycles, and the site links to each by its own anchor.
+  content              Json?
+  privacyPolicyContent Json?
+  cookiePolicyContent  Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("terms_policies")
+}
+
+model HeaderMenu {
+  id        String   @id @default(cuid())
+  mainMenu  Json     @map("main_menu")
+  // Utility-bar content: {whatsappLabel, whatsappNumber, careLabel, careNumber, ctaText, ctaUrl}
+  contactDetails Json? @map("contact_details")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("header_menus")
+}
+
+model FooterMenu {
+  id             String   @id @default(cuid())
+  mainMenu       Json     @map("main_menu")
+  contactDetails Json     @map("contact_details")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("footer_menus")
+}
+
+model ServicePage {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  // Which frontend layout renders this page (e.g. "division" → ServiceLayout).
+  // Plain string so new layouts never require a schema migration.
+  template        String        @default("division")
+  metaTitle       String?
+  metaDescription String?       @db.Text
+  // Entire page config as one flexible document (hero + ordered sections).
+  // Shape: app/lib/content/service-content.ts → ServicePageContent
+  content         Json
+  status          PublishStatus @default(draft)
+  authorId        String
+  author          User          @relation(fields: [authorId], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([status])
+  // Paginated dashboard listing sorts by newest first
+  @@index([createdAt])
+  // "Recent services" widget + sitemap sort by last update
+  @@index([updatedAt])
+  @@map("service_pages")
+}
+
+model PackageBlock {
+  id       String @id @default(cuid())
+  slug     String @unique
+  title    String @db.VarChar(500)
+  // Page slugs this block is injected into, e.g. ["travel", "education"].
+  // Free-text on purpose: a block can be prepared before its page exists.
+  targetPages Json @map("target_pages")
+  // Entire block as one flexible document (header + tabs + packages).
+  // Shape: app/lib/content/package-content.ts → PackageBlockContent
+  content  Json
+  status   PublishStatus @default(draft)
+  // Frontend on/off switch, independent of `status`: lets an admin pull a
+  // published block off the live pages (seasonal, sold out, being rewritten)
+  // without reverting it to draft or deleting it.
+  visible  Boolean       @default(true)
+  authorId String
+  author   User          @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  // Paginated dashboard listing sorts by newest first
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@map("package_blocks")
+}
+
+model AboutPage {
+  id              String   @id @default(cuid())
+  metaTitle       String?
+  metaDescription String?  @db.Text
+  // Entire page as one flexible document (hero, metrics, pillars,
+  // accreditations, story, team, founder).
+  // Shape: app/lib/content/about-content.ts → AboutPageContent
+  content         Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("about_pages")
+}
