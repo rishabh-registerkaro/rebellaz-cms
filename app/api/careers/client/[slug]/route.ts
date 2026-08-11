@@ -1,6 +1,7 @@
 import prisma from "@/app/lib/config/db";
 import { NextRequest, NextResponse } from "next/server";
 import { getCorsHeaders } from "@/app/lib/utils/cors";
+import { cacheGet, cacheSet } from "@/app/lib/utils/responseCache";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
 import { daysSince, postedLabel, roleMeta, roleComp, toBullets, toPerks } from "@/app/lib/constants/career";
 
@@ -21,6 +22,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
   const headers = getCorsHeaders(req.headers.get("origin"));
   try {
     const { slug } = await context.params;
+
+    const cached = cacheGet("career-detail", slug);
+    if (cached) {
+      return NextResponse.json(cached, {
+        status: 200,
+        headers: { ...headers, "x-cache": "HIT" },
+      });
+    }
 
     // Filter on status in the query rather than fetching then checking: a draft
     // must 404 publicly, and this way `status` never enters the response shape.
@@ -58,8 +67,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
 
     const posted = career.publishedAt ?? career.createdAt;
 
-    return NextResponse.json(
-      {
+    const payload = {
         success: true,
         role: {
           ...career,
@@ -74,9 +82,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
           posted: postedLabel(posted),
           days: daysSince(posted),
         },
-      },
-      { status: 200, headers }
-    );
+      };
+
+    cacheSet("career-detail", slug, payload);
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: { ...headers, "x-cache": "MISS" },
+    });
   } catch (error) {
     console.error("Failed to fetch public career", error);
     const res = apiErrorResponse(error, "Failed to fetch career.");

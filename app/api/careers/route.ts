@@ -6,6 +6,7 @@ import { Prisma, PublishStatus } from "@prisma/client";
 import { requireRole } from "@/app/lib/utils/authorization";
 import { EDITOR_ROLES, CONTENT_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags, careerTags } from "@/app/lib/utils/revalidateFrontend";
+import { cacheClear } from "@/app/lib/utils/responseCache";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
 import {
   slugifyCareer,
@@ -159,6 +160,10 @@ export async function POST(req: NextRequest) {
       include: { author: { select: { id: true, username: true } } },
     });
 
+    // Drop the public response cache too, or the editor keeps seeing the old
+    // payload for up to its TTL and assumes the save failed.
+    cacheClear("careers-list");
+    cacheClear("career-detail");
     await revalidateFrontendTags(careerTags(career.slug));
 
     return NextResponse.json(

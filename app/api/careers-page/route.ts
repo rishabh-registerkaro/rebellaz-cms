@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { requireRole } from "@/app/lib/utils/authorization";
 import { CONTENT_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags } from "@/app/lib/utils/revalidateFrontend";
+import { cacheGet, cacheSet, cacheClear } from "@/app/lib/utils/responseCache";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
 import { getCorsHeaders } from "@/app/lib/utils/cors";
 import {
@@ -26,12 +27,19 @@ export async function OPTIONS(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const headers = getCorsHeaders(req.headers.get("origin"));
   try {
+    const cached = cacheGet("careers-page", "singleton");
+    if (cached) {
+      return NextResponse.json(cached, {
+        status: 200,
+        headers: { ...headers, "x-cache": "HIT" },
+      });
+    }
+
     const row = await prisma.careersPage.findFirst();
 
     // No row yet just means nobody has opened the editor — serve the shipped
     // copy so the live page renders correctly from day one.
-    return NextResponse.json(
-      {
+    const payload = {
         success: true,
         data: {
           _id: row?.id ?? null,
@@ -40,9 +48,14 @@ export async function GET(req: NextRequest) {
           content: withCareersDefaults(row?.content),
           updatedAt: row?.updatedAt ?? null,
         },
-      },
-      { status: 200, headers }
-    );
+      };
+
+    cacheSet("careers-page", "singleton", payload);
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: { ...headers, "x-cache": "MISS" },
+    });
   } catch (error) {
     console.error("Failed to fetch careers page content", error);
     const res = apiErrorResponse(error, "Failed to fetch careers page content.");
@@ -86,6 +99,7 @@ export async function PUT(req: NextRequest) {
           },
         });
 
+    cacheClear("careers-page");
     await revalidateFrontendTags(["careers-page"]);
 
     return NextResponse.json(
@@ -115,6 +129,7 @@ export async function DELETE(req: NextRequest) {
         data: { content: DEFAULT_CAREERS_CONTENT as unknown as Prisma.InputJsonValue },
       });
     }
+    cacheClear("careers-page");
     await revalidateFrontendTags(["careers-page"]);
 
     return NextResponse.json(
