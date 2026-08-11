@@ -7,20 +7,54 @@
  * here silently hides roles from that tab.
  */
 
-/** Discipline tabs on /careers. "All roles" is the UI-only default, not a value. */
+/**
+ * Seed/fallback discipline names.
+ *
+ * The `disciplines` table is the authority at runtime — these are what it is
+ * seeded with, and what the frontend's DISCIPLINES union expects. Renaming one
+ * here does nothing on its own; edit it under Careers → Disciplines.
+ */
 export const CAREER_CATEGORIES = [
-  "Oil & Gas",
-  "Renewables",
-  "Marine & Offshore",
-  "HSE & Quality",
+  "Research",
   "Engineering",
+  "Applied AI",
+  "Ops",
 ] as const;
 
 /** Engagement types shown in the role's key-details strip. */
-export const CAREER_TYPES = ["Rotational", "Contract", "Staff"] as const;
+export const CAREER_TYPES = ["Full-time", "Contract", "Residency", "Internship"] as const;
 
-/** Rate period appended to the salary string, e.g. "£700–820" + "/day". */
-export const CAREER_UNITS = ["/day", "/yr", "/month", "/hr"] as const;
+/** Rate period appended to the salary string, e.g. "$140–190k" + "/yr". */
+export const CAREER_UNITS = ["/yr", "/day", "/month", "/hr"] as const;
+
+/**
+ * Types that are bounded in time, and so are the only ones where a Duration
+ * and a chosen rate period mean anything.
+ *
+ * A permanent role is not "a 6-month full-time" — asking an author for its
+ * duration invites junk like "." or "N/A", which then leaks into the public
+ * key-details line. Everything else pays on a fixed period instead (below).
+ */
+export const TYPES_WITH_DURATION = ["Contract", "Residency"] as const;
+
+/** Rate period forced for the open-ended types, and the pay label to match. */
+export const TYPE_PAY: Record<string, { unit: string; label: string; hint: string }> = {
+  "Full-time": {
+    unit: "/yr",
+    label: "Expected salary",
+    hint: "Annual range, e.g. $140–190k. Shown verbatim, so include the currency symbol.",
+  },
+  Internship: {
+    unit: "/month",
+    label: "Stipend",
+    hint: "Monthly stipend, e.g. $2–3k. Shown verbatim, so include the currency symbol.",
+  },
+};
+
+/** True when this type should collect a Duration and a rate period. */
+export function typeHasDuration(type: string): boolean {
+  return TYPES_WITH_DURATION.some((t) => t.toLowerCase() === (type ?? "").trim().toLowerCase());
+}
 
 export type CareerCategory = (typeof CAREER_CATEGORIES)[number];
 export type CareerType = (typeof CAREER_TYPES)[number];
@@ -41,6 +75,72 @@ export function splitRate(salary: string, unit: string): { amount: string; perio
     return { amount: amount.slice(0, -period.length).trim(), period };
   }
   return { amount, period };
+}
+
+/**
+ * The site's key-details line, e.g. "Remote · Contract" or
+ * "Remote · 6-mo residency".
+ *
+ * `duration` qualifies the engagement when set, which is how the board reads
+ * on the live site; without it the type stands alone. Built here rather than
+ * on the frontend so the public API can hand back the `Role` shape the site
+ * already renders, leaving its components untouched.
+ */
+export function roleMeta(location: string, duration: string, type: string): string {
+  const cleanType = (type ?? "").trim();
+  const cleanDuration = (duration ?? "").trim();
+
+  // Only bounded types qualify their engagement, and only with a duration that
+  // actually says something — a legacy "." or "N/A" left on a full-time role
+  // must not render as "Remote · . full-time".
+  const useDuration = typeHasDuration(cleanType) && /[a-z0-9]/i.test(cleanDuration);
+  const engagement = useDuration
+    ? `${cleanDuration} ${cleanType.toLowerCase()}`
+    : cleanType;
+
+  return [location?.trim(), engagement].filter(Boolean).join(" · ");
+}
+
+/** Compensation as one string, e.g. "$140–190k /yr". */
+export function roleComp(salary: string, unit: string): string {
+  const { amount, period } = splitRate(salary, unit);
+  return [amount, period].filter(Boolean).join(" ");
+}
+
+/**
+ * Coerce a `Json?` bullet column into a clean string array.
+ *
+ * Prisma types these as `JsonValue`, and a hand-edited row could hold anything,
+ * so non-strings and blanks are dropped rather than rendered as "[object
+ * Object]" or an empty bullet on the public page.
+ */
+export function toBullets(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+/** One "What we offer" entry. */
+export type Perk = { title: string; desc: string };
+
+/**
+ * Coerce the `perks` Json column into clean {title, desc} pairs.
+ *
+ * Same defensive reasoning as toBullets(): the column is free-form JSON, and a
+ * half-filled row must not render as an empty bullet or "[object Object]".
+ * An entry needs a title to be worth showing; the description may be blank.
+ */
+export function toPerks(value: unknown): Perk[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v): v is Record<string, unknown> => typeof v === "object" && v !== null)
+    .map((v) => ({
+      title: typeof v.title === "string" ? v.title.trim() : "",
+      desc: typeof v.desc === "string" ? v.desc.trim() : "",
+    }))
+    .filter((p) => p.title);
 }
 
 /** URL-safe slug from a role title — mirrors slugify() on the frontend. */
