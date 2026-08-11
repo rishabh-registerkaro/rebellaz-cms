@@ -1,715 +1,640 @@
 "use client";
 
-// Contact Us page editor. Edits the single ContactPageContent document the
-// frontend /contact-us page renders — hero, the copy around the enquiry form,
-// the 24/7 duty-desk band, the FAQ and the closing banner.
-//
-// It previously described the contact page of the project this CMS was forked
-// from: a tabbed quote/inquiry card with document types, legalisation
-// destinations, a WhatsApp hotline and an office map. None of that is on this
-// site, so every one of those fields changed nothing.
-
-import { useEffect, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Plus, Trash2, ArrowUp, ArrowDown, RotateCcw } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import {
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  HelpCircle,
-  Inbox,
-  Megaphone,
-  PhoneCall,
-  Plus,
-  RefreshCw,
-  Sparkles,
-  Trash2,
-} from "lucide-react";
-import * as Collapsible from "@radix-ui/react-collapsible";
-import {
-  CONTACT_META_DEFAULTS,
-  defaultContactContent,
-  withContactDefaults,
+  DEFAULT_CONTACT_CONTENT,
+  HERO_STAT_COUNT,
+  RAIL_STAT_COUNT,
+  STEP_COUNT,
+  LOCATION_ROW_COUNT,
   type ContactPageContent,
 } from "@/app/lib/content/contact-content";
 
-// ─── Shared styles (same idiom as the About editor) ──────────────────────────
-
 const inputCls =
-  "w-full rounded-lg border border-slate-600 bg-slate-900/60 px-3 py-2 text-sm text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500";
-const textareaCls = `${inputCls} resize-y`;
-const cardWrapCls = "bg-slate-800/30 p-4 rounded-lg border border-slate-700";
-const labelCls = "text-sm font-medium text-slate-200";
-const addBtnCls =
-  "border-slate-600 bg-slate-800/60 text-slate-200 hover:bg-slate-700 hover:text-white";
+  "w-full border border-slate-600 bg-slate-800 text-slate-200 placeholder-slate-400";
+const labelCls = "block text-sm font-medium text-slate-200 mb-2";
+const cardCls = "bg-slate-800 border border-slate-700 shadow-sm p-6 space-y-5";
+const itemCls = "border border-slate-600 p-4 space-y-4 bg-slate-900";
+const noteCls = "text-xs text-slate-400";
 
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <label className={labelCls}>{label}</label>
-      {children}
-      {hint && <p className="text-xs text-slate-500">{hint}</p>}
-    </div>
-  );
-}
-
-function Section({
-  id,
-  icon,
-  title,
-  hint,
-  open,
-  onToggle,
-  children,
-}: {
-  id: string;
-  icon: React.ReactNode;
-  title: string;
-  hint?: string;
-  open: boolean;
-  onToggle: (id: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Collapsible.Root open={open} onOpenChange={() => onToggle(id)}>
-      <div className="overflow-hidden rounded-xl border border-slate-700/80 bg-slate-800/40">
-        <Collapsible.Trigger className="w-full cursor-pointer px-5 py-4 text-left hover:bg-slate-800/60">
-          <div className="flex items-center gap-3">
-            <span className="text-indigo-400">{icon}</span>
-            <span className="flex-1">
-              <span className="block text-sm font-semibold text-white">{title}</span>
-              {hint && <span className="block text-xs text-slate-500">{hint}</span>}
-            </span>
-            {open ? (
-              <ChevronDown size={16} className="text-slate-400" />
-            ) : (
-              <ChevronRight size={16} className="text-slate-400" />
-            )}
-          </div>
-        </Collapsible.Trigger>
-        <Collapsible.Content>
-          <div className="space-y-4 border-t border-slate-700/60 px-5 pb-6 pt-5">
-            {children}
-          </div>
-        </Collapsible.Content>
-      </div>
-    </Collapsible.Root>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function ContactDashboardPage() {
-  const [metaTitle, setMetaTitle] = useState(CONTACT_META_DEFAULTS.metaTitle);
-  const [metaDescription, setMetaDescription] = useState(
-    CONTACT_META_DEFAULTS.metaDescription
-  );
-  const [content, setContent] = useState<ContactPageContent>(defaultContactContent());
-  const [exists, setExists] = useState(false);
+export default function ContactContentPage() {
+  const [content, setContent] = useState<ContactPageContent>(DEFAULT_CONTACT_CONTENT);
+  const [metaTitle, setMetaTitle] = useState("");
+  const [metaDescription, setMetaDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [open, setOpen] = useState<Record<string, boolean>>({ seo: true, hero: true });
 
-  const toggle = (k: string) => setOpen((p) => ({ ...p, [k]: !p[k] }));
-
-  /** Update one top-level block, e.g. set("hero", { ...hero, badge }) */
-  const set = <K extends keyof ContactPageContent>(
-    key: K,
-    value: ContactPageContent[K]
-  ) => setContent((p) => ({ ...p, [key]: value }));
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/contact", { credentials: "include" });
-        const data = await res.json();
-        if (data.success && data.data) {
-          setExists(true);
-          setMetaTitle(data.data.metaTitle ?? CONTACT_META_DEFAULTS.metaTitle);
-          setMetaDescription(
-            data.data.metaDescription ?? CONTACT_META_DEFAULTS.metaDescription
-          );
-          setContent(withContactDefaults(data.data.content));
-        }
-      } catch {
-        toast.error("Failed to load the contact page", { closeButton: true });
-      } finally {
-        setLoading(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/contact", { credentials: "include" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message ?? "Failed to load");
+      if (json.data) {
+        setContent(json.data.content);
+        setMetaTitle(json.data.metaTitle ?? "");
+        setMetaDescription(json.data.metaDescription ?? "");
       }
-    })();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load content", {
+        closeButton: true,
+      });
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleRevalidate = async () => {
-    const toastId = toast.loading("Revalidating cache...");
-    try {
-      const res = await fetch("/api/revalidate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags: ["contact-page"] }),
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success("Cache cleared — frontend will fetch fresh content", { id: toastId });
-      } else {
-        toast.error(data.message || "Revalidation failed", { id: toastId });
-      }
-    } catch {
-      toast.error("Revalidation failed", { id: toastId });
-    }
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const handleSave = async () => {
+  const setSection = <K extends keyof ContactPageContent>(
+    key: K,
+    value: Partial<ContactPageContent[K]>
+  ) => setContent((c) => ({ ...c, [key]: { ...c[key], ...value } }));
+
+  /** Replace one entry of a fixed-length list without disturbing the others. */
+  const setAt = <T,>(list: T[], index: number, patch: Partial<T>): T[] =>
+    list.map((x, i) => (i === index ? { ...x, ...patch } : x));
+
+  const save = async () => {
     setSaving(true);
-    const toastId = toast.loading("Saving...", { closeButton: true });
+    const toastId = toast.loading("Saving contact page...");
     try {
       const res = await fetch("/api/contact", {
-        method: exists ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
         credentials: "include",
-        body: JSON.stringify({ metaTitle, metaDescription, content }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, metaTitle, metaDescription }),
       });
-      const data = await res.json();
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message ?? "Save failed");
       toast.dismiss(toastId);
-      if (res.ok && data.success) {
-        setExists(true);
-        toast.success("Contact page saved — live site updated", { closeButton: true });
-      } else {
-        toast.error(data.message || "Failed to save", { closeButton: true });
-      }
-    } catch {
+      toast.success("Contact page saved", { closeButton: true });
+    } catch (error) {
       toast.dismiss(toastId);
-      toast.error("Failed to save", { closeButton: true });
+      toast.error(error instanceof Error ? error.message : "Something went wrong", {
+        closeButton: true,
+      });
     } finally {
       setSaving(false);
     }
   };
 
+  const resetCopy = () => {
+    setContent(DEFAULT_CONTACT_CONTENT);
+    toast.message("Default copy loaded — press Save changes to keep it", { closeButton: true });
+  };
+
+  const faqs = {
+    update: (i: number, patch: Partial<ContactPageContent["faq"]["items"][number]>) =>
+      setSection("faq", { items: setAt(content.faq.items, i, patch) }),
+    remove: (i: number) =>
+      setSection("faq", { items: content.faq.items.filter((_, idx) => idx !== i) }),
+    add: () =>
+      setSection("faq", { items: [...content.faq.items, { question: "", answer: "" }] }),
+    move: (i: number, delta: -1 | 1) => {
+      const j = i + delta;
+      if (j < 0 || j >= content.faq.items.length) return;
+      const next = [...content.faq.items];
+      [next[i], next[j]] = [next[j], next[i]];
+      setSection("faq", { items: next });
+    },
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-950 to-slate-900 p-6 flex items-center justify-center">
-        <p className="text-slate-300">Loading...</p>
+      <div className="min-h-screen w-full bg-slate-900 p-6">
+        <p className="text-slate-400">Loading contact page content…</p>
       </div>
     );
   }
 
-  const { hero, enquiry, emergency, faq, cta } = content;
-
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-950 to-slate-900 p-6">
-      <div className="mx-auto max-w-5xl space-y-4">
-        <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="min-h-screen w-full bg-slate-900 p-6">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="mb-1 text-3xl font-bold text-white">Contact Page</h1>
+            <h1 className="mb-1 text-3xl font-bold text-slate-100">Contact Page Content</h1>
             <p className="text-slate-400">
-              Everything on <code className="text-indigo-300">/contact-us</code>, in the
-              order it appears.
+              The copy around the enquiry form. The form itself is part of the site.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleRevalidate}
-              variant="outline"
-              className={addBtnCls}
-              type="button"
-            >
-              <RefreshCw size={15} className="mr-2" />
-              Clear cache
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="secondary" onClick={resetCopy} disabled={saving}>
+              <RotateCcw className="mr-2 h-4 w-4" /> Reset copy
             </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-indigo-500 text-white hover:bg-indigo-600"
-              type="button"
-            >
-              {saving ? "Saving..." : "Save"}
+            <Button type="button" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
         </div>
 
-        {/* SEO ------------------------------------------------------- */}
-        <Section
-          id="seo"
-          icon={<FileText size={15} />}
-          title="SEO / Meta"
-          hint="Browser tab title and the search-result description."
-          open={!!open.seo}
-          onToggle={toggle}
-        >
-          <Field label="Meta title">
+        {/* 1. Hero -------------------------------------------------------- */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">1. Hero</h2>
+
+          <div>
+            <label className={labelCls}>Badge</label>
             <Input
-              value={metaTitle}
-              onChange={(e) => setMetaTitle(e.target.value)}
               className={inputCls}
+              value={content.hero.badge}
+              onChange={(e) => setSection("hero", { badge: e.target.value })}
+              placeholder="Lab open · taking new problems"
             />
-          </Field>
-          <Field label="Meta description">
-            <textarea
-              rows={3}
-              value={metaDescription}
-              onChange={(e) => setMetaDescription(e.target.value)}
-              className={textareaCls}
-            />
-          </Field>
-        </Section>
-
-        {/* Hero ------------------------------------------------------ */}
-        <Section
-          id="hero"
-          icon={<Sparkles size={15} />}
-          title="Hero"
-          hint="The top of the page: pill, headline, intro and the two buttons."
-          open={!!open.hero}
-          onToggle={toggle}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Pill text" hint="Beside the green dot.">
-              <Input
-                value={hero.badge}
-                onChange={(e) => set("hero", { ...hero, badge: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Pill suffix" hint="Muted text after the pill.">
-              <Input
-                value={hero.badgeSuffix}
-                onChange={(e) => set("hero", { ...hero, badgeSuffix: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Headline">
-              <Input
-                value={hero.titleLead}
-                onChange={(e) => set("hero", { ...hero, titleLead: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Headline (orange part)">
-              <Input
-                value={hero.titleAccent}
-                onChange={(e) => set("hero", { ...hero, titleAccent: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-          </div>
-          <Field label="Intro paragraph">
-            <textarea
-              rows={3}
-              value={hero.subtitle}
-              onChange={(e) => set("hero", { ...hero, subtitle: e.target.value })}
-              className={textareaCls}
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Primary button">
-              <Input
-                value={hero.ctaPrimary}
-                onChange={(e) => set("hero", { ...hero, ctaPrimary: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Secondary button">
-              <Input
-                value={hero.ctaSecondary}
-                onChange={(e) => set("hero", { ...hero, ctaSecondary: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-          </div>
-        </Section>
-
-        {/* Enquiry --------------------------------------------------- */}
-        <Section
-          id="enquiry"
-          icon={<Inbox size={15} />}
-          title="Enquiry form"
-          hint="The copy around the form. The form fields themselves are fixed."
-          open={!!open.enquiry}
-          onToggle={toggle}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Kicker">
-              <Input
-                value={enquiry.kicker}
-                onChange={(e) => set("enquiry", { ...enquiry, kicker: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Heading">
-              <Input
-                value={enquiry.heading}
-                onChange={(e) => set("enquiry", { ...enquiry, heading: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-          </div>
-          <Field label="Intro paragraph">
-            <textarea
-              rows={2}
-              value={enquiry.intro}
-              onChange={(e) => set("enquiry", { ...enquiry, intro: e.target.value })}
-              className={textareaCls}
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Routing label">
-              <Input
-                value={enquiry.routingLabel}
-                onChange={(e) =>
-                  set("enquiry", { ...enquiry, routingLabel: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Desk name">
-              <Input
-                value={enquiry.deskName}
-                onChange={(e) => set("enquiry", { ...enquiry, deskName: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Desk location" hint="Shown until a region is chosen.">
-              <Input
-                value={enquiry.deskLocation}
-                onChange={(e) =>
-                  set("enquiry", { ...enquiry, deskLocation: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
           </div>
 
-          {/* Region options */}
-          <div className={cardWrapCls}>
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <p className={labelCls}>Project region options</p>
-                <p className="text-xs text-slate-500">
-                  The dropdown in the form, in this order.
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className={addBtnCls}
-                onClick={() =>
-                  set("enquiry", { ...enquiry, regions: [...enquiry.regions, ""] })
-                }
-              >
-                <Plus size={14} className="mr-1" /> Add
-              </Button>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={content.hero.title}
+                onChange={(e) => setSection("hero", { title: e.target.value })}
+                placeholder="Bring us a problem worth"
+              />
             </div>
+            <div>
+              <label className={labelCls}>Heading — highlighted words</label>
+              <Input
+                className={inputCls}
+                value={content.hero.titleAccent}
+                onChange={(e) => setSection("hero", { titleAccent: e.target.value })}
+                placeholder="working on"
+              />
+              <p className={`${noteCls} mt-1`}>Shown in brand red after the heading.</p>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelCls}>Intro paragraph</label>
+            <Textarea
+              className={inputCls}
+              rows={3}
+              value={content.hero.lede}
+              onChange={(e) => setSection("hero", { lede: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className={labelCls}>Stats</label>
+            <p className={`${noteCls} mb-2`}>
+              Exactly {HERO_STAT_COUNT} — the strip under the heading is a fixed three-column
+              layout.
+            </p>
             <div className="space-y-2">
-              {enquiry.regions.map((r, i) => (
-                <div key={i} className="flex gap-2">
+              {content.hero.stats.map((stat, i) => (
+                <div key={i} className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <Input
-                    value={r}
-                    onChange={(e) => {
-                      const regions = [...enquiry.regions];
-                      regions[i] = e.target.value;
-                      set("enquiry", { ...enquiry, regions });
-                    }}
                     className={inputCls}
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="border-red-500/40 text-red-300 hover:bg-red-500/10"
-                    onClick={() =>
-                      set("enquiry", {
-                        ...enquiry,
-                        regions: enquiry.regions.filter((_, j) => j !== i),
-                      })
+                    value={stat.value}
+                    onChange={(e) =>
+                      setSection("hero", { stats: setAt(content.hero.stats, i, { value: e.target.value }) })
                     }
-                  >
-                    <Trash2 size={14} />
-                  </Button>
+                    placeholder="< 48h"
+                  />
+                  <Input
+                    className={inputCls}
+                    value={stat.label}
+                    onChange={(e) =>
+                      setSection("hero", { stats: setAt(content.hero.stats, i, { label: e.target.value }) })
+                    }
+                    placeholder="First reply"
+                  />
                 </div>
               ))}
             </div>
           </div>
+        </div>
 
-          <Field label="Consent checkbox text">
-            <textarea
-              rows={2}
-              value={enquiry.consentText}
-              onChange={(e) =>
-                set("enquiry", { ...enquiry, consentText: e.target.value })
-              }
-              className={textareaCls}
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Submit button">
-              <Input
-                value={enquiry.submitLabel}
-                onChange={(e) =>
-                  set("enquiry", { ...enquiry, submitLabel: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Reply note" hint="Small print beside the button.">
-              <Input
-                value={enquiry.replyNote}
-                onChange={(e) => set("enquiry", { ...enquiry, replyNote: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
+        {/* 2. Right-hand rail --------------------------------------------- */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">2. Right-hand panel</h2>
+          <p className={noteCls}>
+            The cards beside the enquiry form. The form itself — topics, timeline, fields — is part
+            of the site and is not edited here.
+          </p>
+
+          <div className={itemCls}>
+            <h3 className="text-sm font-semibold text-slate-100">Reach the lab</h3>
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div>
+                <label className={labelCls}>Card heading</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.reach.heading}
+                  onChange={(e) =>
+                    setSection("rail", { reach: { ...content.rail.reach, heading: e.target.value } })
+                  }
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Email</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.reach.email}
+                  onChange={(e) =>
+                    setSection("rail", { reach: { ...content.rail.reach, email: e.target.value } })
+                  }
+                  placeholder="amigo@rebel-labz.com"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Phone — shown</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.reach.phone}
+                  onChange={(e) =>
+                    setSection("rail", { reach: { ...content.rail.reach, phone: e.target.value } })
+                  }
+                  placeholder="+91-8828267791"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Phone — link</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.reach.phoneHref}
+                  onChange={(e) =>
+                    setSection("rail", {
+                      reach: { ...content.rail.reach, phoneHref: e.target.value },
+                    })
+                  }
+                  placeholder="tel:+918828267791"
+                />
+                <p className={`${noteCls} mt-1`}>Must start with <code>tel:</code>.</p>
+              </div>
+              <div>
+                <label className={labelCls}>LinkedIn — shown</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.reach.linkedin}
+                  onChange={(e) =>
+                    setSection("rail", { reach: { ...content.rail.reach, linkedin: e.target.value } })
+                  }
+                  placeholder="linkedin.com/in/amigo-sharma"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>LinkedIn — link</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.reach.linkedinHref}
+                  onChange={(e) =>
+                    setSection("rail", {
+                      reach: { ...content.rail.reach, linkedinHref: e.target.value },
+                    })
+                  }
+                  placeholder="https://www.linkedin.com/in/amigo-sharma"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Success heading">
-              <Input
-                value={enquiry.successHeading}
-                onChange={(e) =>
-                  set("enquiry", { ...enquiry, successHeading: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Success text">
-              <Input
-                value={enquiry.successText}
-                onChange={(e) =>
-                  set("enquiry", { ...enquiry, successText: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Success button">
-              <Input
-                value={enquiry.successButton}
-                onChange={(e) =>
-                  set("enquiry", { ...enquiry, successButton: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
+          <div className={itemCls}>
+            <h3 className="text-sm font-semibold text-slate-100">Join the lab</h3>
+            <p className={noteCls}>
+              The &ldquo;8 open roles&rdquo; line is counted from published roles automatically.
+            </p>
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div>
+                <label className={labelCls}>Card heading</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.join.heading}
+                  onChange={(e) =>
+                    setSection("rail", { join: { ...content.rail.join, heading: e.target.value } })
+                  }
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Card link</label>
+                <Input
+                  className={inputCls}
+                  value={content.rail.join.href}
+                  onChange={(e) =>
+                    setSection("rail", { join: { ...content.rail.join, href: e.target.value } })
+                  }
+                  placeholder="/careers"
+                />
+              </div>
+            </div>
           </div>
-        </Section>
 
-        {/* Emergency ------------------------------------------------- */}
-        <Section
-          id="emergency"
-          icon={<PhoneCall size={15} />}
-          title="24/7 duty desk"
-          hint="The dark band with the emergency phone and email."
-          open={!!open.emergency}
-          onToggle={toggle}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Badge">
+          <div className={itemCls}>
+            <h3 className="text-sm font-semibold text-slate-100">What you get from us</h3>
+            <div>
+              <label className={labelCls}>Kicker</label>
               <Input
-                value={emergency.badge}
-                onChange={(e) => set("emergency", { ...emergency, badge: e.target.value })}
                 className={inputCls}
+                value={content.rail.eyebrow}
+                onChange={(e) => setSection("rail", { eyebrow: e.target.value })}
+                placeholder="What you get from us"
               />
-            </Field>
-            <Field label="Heading">
-              <Input
-                value={emergency.heading}
-                onChange={(e) =>
-                  set("emergency", { ...emergency, heading: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-          </div>
-          <Field label="Body">
-            <textarea
-              rows={3}
-              value={emergency.body}
-              onChange={(e) => set("emergency", { ...emergency, body: e.target.value })}
-              className={textareaCls}
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Phone label">
-              <Input
-                value={emergency.phoneLabel}
-                onChange={(e) =>
-                  set("emergency", { ...emergency, phoneLabel: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Phone number" hint="Also becomes the tap-to-call link.">
-              <Input
-                value={emergency.phoneNumber}
-                onChange={(e) =>
-                  set("emergency", { ...emergency, phoneNumber: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Email label">
-              <Input
-                value={emergency.emailLabel}
-                onChange={(e) =>
-                  set("emergency", { ...emergency, emailLabel: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Email address">
-              <Input
-                value={emergency.emailAddress}
-                onChange={(e) =>
-                  set("emergency", { ...emergency, emailAddress: e.target.value })
-                }
-                className={inputCls}
-              />
-            </Field>
-          </div>
-        </Section>
-
-        {/* FAQ ------------------------------------------------------- */}
-        <Section
-          id="faq"
-          icon={<HelpCircle size={15} />}
-          title="FAQ"
-          hint="Questions shown below the form."
-          open={!!open.faq}
-          onToggle={toggle}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Kicker">
-              <Input
-                value={faq.kicker}
-                onChange={(e) => set("faq", { ...faq, kicker: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-            <Field label="Heading">
-              <Input
-                value={faq.heading}
-                onChange={(e) => set("faq", { ...faq, heading: e.target.value })}
-                className={inputCls}
-              />
-            </Field>
-          </div>
-          <Field label="Intro">
-            <textarea
-              rows={2}
-              value={faq.intro}
-              onChange={(e) => set("faq", { ...faq, intro: e.target.value })}
-              className={textareaCls}
-            />
-          </Field>
-
-          <div className="flex items-center justify-between">
-            <p className={labelCls}>Questions</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={addBtnCls}
-              onClick={() =>
-                set("faq", { ...faq, items: [...faq.items, { q: "", a: "" }] })
-              }
-            >
-              <Plus size={14} className="mr-1" /> Add question
-            </Button>
-          </div>
-          <div className="space-y-3">
-            {faq.items.map((item, i) => (
-              <div key={i} className={cardWrapCls}>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-400">#{i + 1}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="border-red-500/40 text-red-300 hover:bg-red-500/10"
-                    onClick={() =>
-                      set("faq", { ...faq, items: faq.items.filter((_, j) => j !== i) })
-                    }
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
-                <div className="space-y-3">
-                  <Input
-                    placeholder="Question"
-                    value={item.q}
-                    onChange={(e) => {
-                      const items = [...faq.items];
-                      items[i] = { ...items[i], q: e.target.value };
-                      set("faq", { ...faq, items });
-                    }}
-                    className={inputCls}
-                  />
-                  <textarea
-                    rows={3}
-                    placeholder="Answer"
-                    value={item.a}
-                    onChange={(e) => {
-                      const items = [...faq.items];
-                      items[i] = { ...items[i], a: e.target.value };
-                      set("faq", { ...faq, items });
-                    }}
-                    className={textareaCls}
-                  />
-                </div>
+            </div>
+            <p className={noteCls}>Exactly {RAIL_STAT_COUNT} — a fixed three-column strip.</p>
+            {content.rail.stats.map((stat, i) => (
+              <div key={i} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Input
+                  className={inputCls}
+                  value={stat.value}
+                  onChange={(e) =>
+                    setSection("rail", { stats: setAt(content.rail.stats, i, { value: e.target.value }) })
+                  }
+                  placeholder="6"
+                />
+                <Input
+                  className={inputCls}
+                  value={stat.label}
+                  onChange={(e) =>
+                    setSection("rail", { stats: setAt(content.rail.stats, i, { label: e.target.value }) })
+                  }
+                  placeholder="Design partners"
+                />
               </div>
             ))}
           </div>
-        </Section>
 
-        {/* Closing banner -------------------------------------------- */}
-        <Section
-          id="cta"
-          icon={<Megaphone size={15} />}
-          title="Closing banner"
-          hint="The dark panel at the foot of the page."
-          open={!!open.cta}
-          onToggle={toggle}
-        >
-          <Field label="Heading">
-            <Input
-              value={cta.heading}
-              onChange={(e) => set("cta", { ...cta, heading: e.target.value })}
-              className={inputCls}
-            />
-          </Field>
-          <Field label="Body">
-            <textarea
-              rows={3}
-              value={cta.body}
-              onChange={(e) => set("cta", { ...cta, body: e.target.value })}
-              className={textareaCls}
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Primary button">
+          <div className={itemCls}>
+            <h3 className="text-sm font-semibold text-slate-100">Where the lab works</h3>
+            <div>
+              <label className={labelCls}>Image caption</label>
               <Input
-                value={cta.primaryLabel}
-                onChange={(e) => set("cta", { ...cta, primaryLabel: e.target.value })}
                 className={inputCls}
+                value={content.rail.location.caption}
+                onChange={(e) =>
+                  setSection("rail", {
+                    location: { ...content.rail.location, caption: e.target.value },
+                  })
+                }
+                placeholder="Remote-first · No head office"
               />
-            </Field>
-            <Field label="Secondary button" hint="Links to the About page.">
+            </div>
+            <div>
+              <label className={labelCls}>Title</label>
               <Input
-                value={cta.secondaryLabel}
-                onChange={(e) => set("cta", { ...cta, secondaryLabel: e.target.value })}
                 className={inputCls}
+                value={content.rail.location.title}
+                onChange={(e) =>
+                  setSection("rail", {
+                    location: { ...content.rail.location, title: e.target.value },
+                  })
+                }
               />
-            </Field>
+            </div>
+            <div>
+              <label className={labelCls}>Body</label>
+              <Textarea
+                className={inputCls}
+                rows={2}
+                value={content.rail.location.body}
+                onChange={(e) =>
+                  setSection("rail", {
+                    location: { ...content.rail.location, body: e.target.value },
+                  })
+                }
+              />
+            </div>
+            <p className={noteCls}>Exactly {LOCATION_ROW_COUNT} rows under the card.</p>
+            {content.rail.location.rows.map((row, i) => (
+              <div key={i} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Input
+                  className={inputCls}
+                  value={row.label}
+                  onChange={(e) =>
+                    setSection("rail", {
+                      location: {
+                        ...content.rail.location,
+                        rows: setAt(content.rail.location.rows, i, { label: e.target.value }),
+                      },
+                    })
+                  }
+                  placeholder="Desk hours"
+                />
+                <Input
+                  className={inputCls}
+                  value={row.value}
+                  onChange={(e) =>
+                    setSection("rail", {
+                      location: {
+                        ...content.rail.location,
+                        rows: setAt(content.rail.location.rows, i, { value: e.target.value }),
+                      },
+                    })
+                  }
+                  placeholder="Mon–Fri · 09:00–18:00 IST"
+                />
+              </div>
+            ))}
           </div>
-        </Section>
+        </div>
+
+        {/* 3. What happens next ------------------------------------------- */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">3. What happens next</h2>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={content.steps.eyebrow}
+                onChange={(e) => setSection("steps", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={content.steps.heading}
+                onChange={(e) => setSection("steps", { heading: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Subtitle</label>
+            <Textarea
+              className={inputCls}
+              rows={2}
+              value={content.steps.aside}
+              onChange={(e) => setSection("steps", { aside: e.target.value })}
+            />
+          </div>
+
+          <p className={noteCls}>
+            Exactly {STEP_COUNT} steps — the strip is a fixed four-column layout, so a fifth would
+            not fit.
+          </p>
+          <div className="space-y-3">
+            {content.steps.items.map((step, i) => (
+              <div key={i} className={itemCls}>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className={labelCls}>Step label</label>
+                    <Input
+                      className={inputCls}
+                      value={step.ident}
+                      onChange={(e) =>
+                        setSection("steps", {
+                          items: setAt(content.steps.items, i, { ident: e.target.value }),
+                        })
+                      }
+                      placeholder="Step 01 · <48h"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Title</label>
+                    <Input
+                      className={inputCls}
+                      value={step.title}
+                      onChange={(e) =>
+                        setSection("steps", {
+                          items: setAt(content.steps.items, i, { title: e.target.value }),
+                        })
+                      }
+                      placeholder="We read and reply"
+                    />
+                  </div>
+                </div>
+                <Textarea
+                  className={inputCls}
+                  rows={2}
+                  value={step.body}
+                  onChange={(e) =>
+                    setSection("steps", {
+                      items: setAt(content.steps.items, i, { body: e.target.value }),
+                    })
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. FAQ ---------------------------------------------------------- */}
+        <div className={cardCls}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">4. Quick answers — FAQ</h2>
+            <Button type="button" variant="secondary" size="sm" onClick={faqs.add}>
+              <Plus className="mr-2 h-4 w-4" /> Add question
+            </Button>
+          </div>
+          <p className={noteCls}>Any number of questions.</p>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={content.faq.eyebrow}
+                onChange={(e) => setSection("faq", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={content.faq.heading}
+                onChange={(e) => setSection("faq", { heading: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Subtitle</label>
+              <Input
+                className={inputCls}
+                value={content.faq.aside}
+                onChange={(e) => setSection("faq", { aside: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {content.faq.items.map((item, i) => (
+              <div key={i} className={itemCls}>
+                <div className="flex items-start gap-3">
+                  <Input
+                    className={inputCls}
+                    value={item.question}
+                    onChange={(e) => faqs.update(i, { question: e.target.value })}
+                    placeholder={`Question ${i + 1}`}
+                  />
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Move question ${i + 1} up`}
+                      disabled={i === 0}
+                      onClick={() => faqs.move(i, -1)}
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Move question ${i + 1} down`}
+                      disabled={i === content.faq.items.length - 1}
+                      onClick={() => faqs.move(i, 1)}
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Remove question ${i + 1}`}
+                      onClick={() => faqs.remove(i)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-400" />
+                    </Button>
+                  </div>
+                </div>
+                <Textarea
+                  className={inputCls}
+                  rows={3}
+                  value={item.answer}
+                  onChange={(e) => faqs.update(i, { answer: e.target.value })}
+                  placeholder="Answer"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* SEO -------------------------------------------------------------- */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">SEO</h2>
+          <div>
+            <label className={labelCls}>Meta title</label>
+            <Input
+              className={inputCls}
+              value={metaTitle}
+              onChange={(e) => setMetaTitle(e.target.value)}
+              placeholder="Contact · Rebellabz"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Meta description</label>
+            <Textarea
+              className={inputCls}
+              rows={2}
+              value={metaDescription}
+              onChange={(e) => setMetaDescription(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 pb-10">
+          <Button type="button" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
       </div>
     </div>
   );
