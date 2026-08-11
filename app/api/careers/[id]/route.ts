@@ -7,7 +7,13 @@ import { requireRole } from "@/app/lib/utils/authorization";
 import { EDITOR_ROLES, CONTENT_ROLES, ADMIN_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags, careerTags } from "@/app/lib/utils/revalidateFrontend";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
-import { slugifyCareer } from "@/app/lib/constants/career";
+import {
+  slugifyCareer,
+  toBullets,
+  toPerks,
+  typeHasDuration,
+  TYPE_PAY,
+} from "@/app/lib/constants/career";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -72,6 +78,7 @@ export async function PUT(req: NextRequest, context: Ctx) {
     }
 
     const nextStatus = (body.status ?? existing.status) as PublishStatus;
+    const nextType = body.type ?? existing.type;
 
     const career = await prisma.career.update({
       where: { id },
@@ -80,13 +87,29 @@ export async function PUT(req: NextRequest, context: Ctx) {
         slug,
         category: body.category ?? existing.category,
         location: body.location ?? existing.location,
-        type: body.type ?? existing.type,
-        duration: body.duration ?? existing.duration,
+        type: nextType,
+        // Switching to an open-ended type clears the fields that type has no
+        // concept of. Left alone, a role changed from Contract to Full-time
+        // would keep a "6-mo" duration the form no longer shows — and so no
+        // longer lets anyone correct — which then renders on the public page.
+        duration: typeHasDuration(nextType) ? (body.duration ?? existing.duration) : "",
         salary: body.salary ?? existing.salary,
-        unit: body.unit ?? existing.unit,
+        unit: TYPE_PAY[nextType]?.unit ?? body.unit ?? existing.unit,
         featured: body.featured === undefined ? existing.featured : Boolean(body.featured),
         description: body.description === undefined ? existing.description : body.description,
         summary: body.summary === undefined ? existing.summary : body.summary,
+        // Follows the same partial-update rule as the fields above: an absent
+        // key leaves the stored bullets alone, so a payload that omits them
+        // cannot silently wipe a role's job description.
+        responsibilities:
+          body.responsibilities === undefined
+            ? (existing.responsibilities ?? undefined)
+            : toBullets(body.responsibilities),
+        requirements:
+          body.requirements === undefined
+            ? (existing.requirements ?? undefined)
+            : toBullets(body.requirements),
+        perks: body.perks === undefined ? (existing.perks ?? undefined) : toPerks(body.perks),
         metaTitle: body.metaTitle === undefined ? existing.metaTitle : body.metaTitle,
         metaDescription:
           body.metaDescription === undefined ? existing.metaDescription : body.metaDescription,

@@ -7,7 +7,14 @@ import { requireRole } from "@/app/lib/utils/authorization";
 import { EDITOR_ROLES, CONTENT_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags, careerTags } from "@/app/lib/utils/revalidateFrontend";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
-import { slugifyCareer, CAREER_TYPES } from "@/app/lib/constants/career";
+import {
+  slugifyCareer,
+  CAREER_TYPES,
+  toBullets,
+  toPerks,
+  typeHasDuration,
+  TYPE_PAY,
+} from "@/app/lib/constants/career";
 
 /** [payload key, label shown to the author] */
 const REQUIRED: Array<[string, string]> = [
@@ -15,9 +22,20 @@ const REQUIRED: Array<[string, string]> = [
   ["category", "Category"],
   ["location", "Location"],
   ["type", "Type"],
-  ["duration", "Duration"],
   ["salary", "Salary"],
 ];
+
+/**
+ * Duration is required only for the bounded types. A full-time or internship
+ * role has none, and the form does not collect one — demanding it here would
+ * make those roles unsavable.
+ */
+function missingFields(body: Record<string, unknown>): string[] {
+  const required = typeHasDuration(String(body.type ?? ""))
+    ? [...REQUIRED, ["duration", "Duration"] as [string, string]]
+    : REQUIRED;
+  return required.filter(([key]) => !String(body[key] ?? "").trim()).map(([, label]) => label);
+}
 
 /** Create a new open role. */
 export async function POST(req: NextRequest) {
@@ -35,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    const missing = REQUIRED.filter(([f]) => !String(body?.[f] ?? "").trim()).map(([, l]) => l);
+    const missing = missingFields(body ?? {});
     if (missing.length) {
       return NextResponse.json(
         {
@@ -122,12 +140,15 @@ export async function POST(req: NextRequest) {
         category: body.category,
         location: body.location,
         type: body.type,
-        duration: body.duration,
+        duration: typeHasDuration(body.type) ? body.duration : "",
         salary: body.salary,
-        unit: body.unit || "/day",
+        unit: TYPE_PAY[body.type]?.unit ?? body.unit ?? "/yr",
         featured: Boolean(body.featured),
         description: body.description ?? null,
         summary: body.summary ?? null,
+        responsibilities: toBullets(body.responsibilities),
+        requirements: toBullets(body.requirements),
+        perks: toPerks(body.perks),
         metaTitle: body.metaTitle ?? null,
         metaDescription: body.metaDescription ?? null,
         status,

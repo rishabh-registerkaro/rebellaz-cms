@@ -2,7 +2,7 @@ import prisma from "@/app/lib/config/db";
 import { NextRequest, NextResponse } from "next/server";
 import { getCorsHeaders } from "@/app/lib/utils/cors";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
-import { daysSince, postedLabel } from "@/app/lib/constants/career";
+import { daysSince, postedLabel, roleMeta, roleComp, toBullets, toPerks } from "@/app/lib/constants/career";
 
 export async function OPTIONS(req: NextRequest) {
   return NextResponse.json({}, { headers: getCorsHeaders(req.headers.get("origin")) });
@@ -38,6 +38,9 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
         featured: true,
         summary: true,
         description: true,
+        responsibilities: true,
+        requirements: true,
+        perks: true,
         metaTitle: true,
         metaDescription: true,
         publishedAt: true,
@@ -60,6 +63,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
         success: true,
         role: {
           ...career,
+          // Mirrors the listing endpoint: the site's `Role` field names, built
+          // here so its detail page keeps rendering exactly what it renders now.
+          discipline: career.category,
+          meta: roleMeta(career.location, career.duration, career.type),
+          comp: roleComp(career.salary, career.unit),
+          responsibilities: toBullets(career.responsibilities),
+          requirements: toBullets(career.requirements),
+          perks: toPerks(career.perks),
           posted: postedLabel(posted),
           days: daysSince(posted),
         },

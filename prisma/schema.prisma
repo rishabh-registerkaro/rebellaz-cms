@@ -153,7 +153,22 @@ model Career {
   /// and stored as HTML — same as Post.content.
   description String? @db.LongText
   /// Short plain-text blurb used for cards and meta description fallback.
+  /// Renders as the "The role" paragraph on the detail page.
   summary     String? @db.Text
+
+  /// "What you'll do" bullets — a JSON array of plain strings.
+  /// Stored as JSON rather than a child table because the list is always read
+  /// and written whole, is never queried across roles, and its order is the
+  /// content. A relation would buy nothing and cost a join on every render.
+  responsibilities Json?
+  /// "What you bring" bullets. Same shape and reasoning as above.
+  requirements     Json?
+
+  /// "What we offer" — a JSON array of { title, desc } pairs shown at the foot
+  /// of the role page. Per-role rather than a global list because an internship
+  /// and a staff role rarely offer the same thing; leaving it empty hides the
+  /// section entirely rather than printing an empty heading.
+  perks Json?
 
   metaTitle       String?
   metaDescription String? @db.Text

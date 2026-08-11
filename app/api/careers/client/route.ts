@@ -3,10 +3,41 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { getCorsHeaders } from "@/app/lib/utils/cors";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
-import { daysSince, postedLabel } from "@/app/lib/constants/career";
+import { daysSince, postedLabel, roleMeta, roleComp } from "@/app/lib/constants/career";
 
 /** Matches the frontend listing's page size. */
 const DEFAULT_PAGE_SIZE = 6;
+
+/**
+ * Short-lived response cache for this endpoint.
+ *
+ * The database is remote Hostinger shared MySQL: a single round trip measures
+ * 200ms–2.5s and is highly variable, so an uncached board took seconds to page.
+ * The data here is public, read-only and identical for every visitor, which
+ * makes it the cheapest possible thing to cache.
+ *
+ * Kept deliberately short so a newly published role appears without anyone
+ * having to think about invalidation. Process-local, so it simply warms again
+ * after a restart or on another instance.
+ */
+const CACHE_TTL_MS = 30_000;
+const cache = new Map<string, { at: number; body: unknown }>();
+
+function cacheGet(key: string): unknown | null {
+  const hit = cache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    cache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function cacheSet(key: string, body: unknown) {
+  // Bounded so a crawler walking ?page=1..1000 cannot grow this without limit.
+  if (cache.size > 200) cache.clear();
+  cache.set(key, { at: Date.now(), body });
+}
 
 export async function OPTIONS(req: NextRequest) {
   return NextResponse.json({}, { headers: getCorsHeaders(req.headers.get("origin")) });
@@ -32,6 +63,15 @@ export async function GET(req: NextRequest) {
     const q = searchParams.get("q")?.trim() || "";
     const featured = searchParams.get("featured")?.trim() || "";
     const sort = searchParams.get("sort") === "oldest" ? "asc" : "desc";
+
+    const cacheKey = searchParams.toString();
+    const cached = cacheGet(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, {
+        status: 200,
+        headers: { ...headers, "x-cache": "HIT" },
+      });
+    }
 
     // Pagination is OPT-IN: only applied when `page` or `limit` is supplied.
     // Without that, `generateStaticParams()` on the frontend — which calls this
@@ -68,45 +108,60 @@ export async function GET(req: NextRequest) {
       }));
     }
 
-    // Total matching rows, independent of the page window — the frontend needs
-    // it to render "showing X of Y" and the page count.
-    const totalCount = await prisma.career.count({ where });
+    // All three run together. They are independent, and against a remote
+    // shared MySQL each round trip costs 200ms–2s — awaiting them in sequence
+    // tripled the endpoint's latency for no reason.
+    const [totalCount, careers, disciplines] = await Promise.all([
+      // Every row matching the filters, NOT the length of this page — the
+      // listing shows "showing 6 of 27".
+      prisma.career.count({ where }),
 
-    const careers = await prisma.career.findMany({
-      where,
-      orderBy: [{ publishedAt: sort }, { createdAt: sort }],
-      ...(paginated ? { skip: (page - 1) * limit, take: limit } : {}),
-      select: {
-        slug: true,
-        title: true,
-        category: true,
-        location: true,
-        type: true,
-        duration: true,
-        salary: true,
-        unit: true,
-        featured: true,
-        summary: true,
-        publishedAt: true,
-        createdAt: true,
-      },
-    });
+      prisma.career.findMany({
+        where,
+        orderBy: [{ publishedAt: sort }, { createdAt: sort }],
+        ...(paginated ? { skip: (page - 1) * limit, take: limit } : {}),
+        // Listing fields only. The description, bullet lists and perks are
+        // needed by the detail page, not by a row on the board — sending them
+        // here made the payload several times larger than what it renders.
+        select: {
+          slug: true,
+          title: true,
+          category: true,
+          location: true,
+          type: true,
+          duration: true,
+          salary: true,
+          unit: true,
+          featured: true,
+          summary: true,
+          publishedAt: true,
+          createdAt: true,
+        },
+      }),
 
-    // Tabs come from the editor-managed Discipline table, in its configured
-    // order — not from whatever happens to be in the result set, which would
-    // reorder itself as roles are published.
-    const disciplines = await prisma.discipline.findMany({
-      where: { active: true },
-      orderBy: [{ position: "asc" }, { name: "asc" }],
-      select: { name: true, slug: true },
-    });
+      // Tabs come from the editor-managed Discipline table, in its configured
+      // order — not from whatever happens to be in the result set, which would
+      // reorder itself as roles are published.
+      prisma.discipline.findMany({
+        where: { active: true },
+        orderBy: [{ position: "asc" }, { name: "asc" }],
+        select: { name: true, slug: true },
+      }),
+    ]);
 
     const roles = careers.map((c) => {
       const posted = c.publishedAt ?? c.createdAt;
       return {
         slug: c.slug,
         title: c.title,
+        // The site's `Role` calls this `discipline`; `category` is kept
+        // alongside it so existing consumers of this endpoint don't break.
+        discipline: c.category,
         category: c.category,
+        // Pre-composed so the frontend renders `Role` as-authored, with no
+        // reshaping logic of its own to drift out of step.
+        meta: roleMeta(c.location, c.duration, c.type),
+        comp: roleComp(c.salary, c.unit),
         location: c.location,
         type: c.type,
         duration: c.duration,
@@ -119,8 +174,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json(
-      {
+    const payload = {
         success: true,
         roles,
         filters: {
@@ -143,9 +197,14 @@ export async function GET(req: NextRequest) {
           hasNextPage: paginated ? page * limit < totalCount : false,
           hasPrevPage: paginated ? page > 1 : false,
         },
-      },
-      { status: 200, headers }
-    );
+      };
+
+    cacheSet(cacheKey, payload);
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: { ...headers, "x-cache": "MISS" },
+    });
   } catch (error) {
     console.error("Failed to fetch public careers", error);
     const res = apiErrorResponse(error, "Failed to fetch careers.");

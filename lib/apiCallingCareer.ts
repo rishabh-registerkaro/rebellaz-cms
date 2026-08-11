@@ -1,5 +1,11 @@
 import axiosInstance from "./axiosInstance";
 
+/** One "What we offer" entry on a role. */
+export interface PerkInput {
+  title: string;
+  desc: string;
+}
+
 export interface Career {
   _id: string;
   title: string;
@@ -13,6 +19,12 @@ export interface Career {
   featured: boolean;
   description: string | null;
   summary: string | null;
+  /** "What you'll do" bullets rendered on the public role page. */
+  responsibilities: string[] | null;
+  /** "What you bring" bullets rendered on the public role page. */
+  requirements: string[] | null;
+  /** "What we offer" pairs; empty or null hides the section on the site. */
+  perks: PerkInput[] | null;
   metaTitle: string | null;
   metaDescription: string | null;
   status: "draft" | "published";
@@ -34,6 +46,9 @@ export interface CareerPayload {
   featured: boolean;
   description?: string;
   summary?: string;
+  responsibilities?: string[];
+  requirements?: string[];
+  perks?: PerkInput[];
   metaTitle?: string;
   metaDescription?: string;
   status: "draft" | "published";
