@@ -2,42 +2,12 @@ import prisma from "@/app/lib/config/db";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { getCorsHeaders } from "@/app/lib/utils/cors";
+import { cacheGet, cacheSet } from "@/app/lib/utils/responseCache";
 import { apiErrorResponse } from "@/app/lib/utils/apiError";
 import { daysSince, postedLabel, roleMeta, roleComp } from "@/app/lib/constants/career";
 
 /** Matches the frontend listing's page size. */
 const DEFAULT_PAGE_SIZE = 6;
-
-/**
- * Short-lived response cache for this endpoint.
- *
- * The database is remote Hostinger shared MySQL: a single round trip measures
- * 200ms–2.5s and is highly variable, so an uncached board took seconds to page.
- * The data here is public, read-only and identical for every visitor, which
- * makes it the cheapest possible thing to cache.
- *
- * Kept deliberately short so a newly published role appears without anyone
- * having to think about invalidation. Process-local, so it simply warms again
- * after a restart or on another instance.
- */
-const CACHE_TTL_MS = 30_000;
-const cache = new Map<string, { at: number; body: unknown }>();
-
-function cacheGet(key: string): unknown | null {
-  const hit = cache.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.at > CACHE_TTL_MS) {
-    cache.delete(key);
-    return null;
-  }
-  return hit.body;
-}
-
-function cacheSet(key: string, body: unknown) {
-  // Bounded so a crawler walking ?page=1..1000 cannot grow this without limit.
-  if (cache.size > 200) cache.clear();
-  cache.set(key, { at: Date.now(), body });
-}
 
 export async function OPTIONS(req: NextRequest) {
   return NextResponse.json({}, { headers: getCorsHeaders(req.headers.get("origin")) });
@@ -65,7 +35,7 @@ export async function GET(req: NextRequest) {
     const sort = searchParams.get("sort") === "oldest" ? "asc" : "desc";
 
     const cacheKey = searchParams.toString();
-    const cached = cacheGet(cacheKey);
+    const cached = cacheGet("careers-list", cacheKey);
     if (cached) {
       return NextResponse.json(cached, {
         status: 200,
@@ -199,7 +169,7 @@ export async function GET(req: NextRequest) {
         },
       };
 
-    cacheSet(cacheKey, payload);
+    cacheSet("careers-list", cacheKey, payload);
 
     return NextResponse.json(payload, {
       status: 200,
