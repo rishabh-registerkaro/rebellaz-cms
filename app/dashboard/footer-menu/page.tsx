@@ -6,6 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { LinkPicker, type LinkValue } from "../header-menu/link-picker";
+import type { PickablePage } from "@/app/lib/constants/sitePages";
+import type { MenuLinkSource } from "@/app/lib/utils/menuTree";
 
 interface SubSubChildMenuItem {
     sub_sub_child_title: string;
@@ -13,6 +16,8 @@ interface SubSubChildMenuItem {
 }
 
 interface SubChildMenuItem {
+    page_id?: string | null;
+    source?: MenuLinkSource;
     title: string;
     url: string;
     sub_sub_child_menu: SubSubChildMenuItem[] | false;
@@ -21,12 +26,17 @@ interface SubChildMenuItem {
 interface ChildMenuItem {
     title: string;
     url: string;
+    /** Set when the link came from the page picker; lets it re-open on that page. */
+    page_id?: string | null;
+    source?: MenuLinkSource;
     sub_child_menu: SubChildMenuItem[] | false;
 }
 
 interface MainMenuItem {
     title: string;
     url: string;
+    page_id?: string | null;
+    source?: MenuLinkSource;
     child_menu: ChildMenuItem[] | false;
 }
 
@@ -50,7 +60,38 @@ interface ContactDetailItem {
     has_sub_child?: boolean;
 }
 
+/**
+ * Read a nested menu list defensively.
+ *
+ * These come out of a JSON column, where a level is stored as an array OR the
+ * literal `false` when it has no children — and may be missing entirely on a
+ * document written by a seed or an older version of this form. The previous
+ * `as ChildMenuItem[]` was a cast, not a check: it silenced the compiler and
+ * then threw "Cannot read properties of undefined (reading 'map')" at runtime.
+ */
+const asList = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
 export default function FooterMenuPage() {
+    // The pages an editor can link to. Loaded once and handed to every picker,
+    // so a menu entry is a page that was chosen rather than a slug retyped.
+    const [pages, setPages] = useState<PickablePage[]>([]);
+    const [pagesLoading, setPagesLoading] = useState(true);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/site-pages", { credentials: "include" });
+                const data = await res.json();
+                if (data.success) setPages(data.pages ?? []);
+            } catch {
+                // Non-fatal: the picker falls back to its custom-link mode, so a
+                // failed load costs convenience, never the ability to edit.
+            } finally {
+                setPagesLoading(false);
+            }
+        })();
+    }, []);
+
     const [mainMenu, setMainMenu] = useState<MainMenuItem[]>([]);
     const [contactDetails, setContactDetails] = useState<ContactDetailItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -89,9 +130,16 @@ export default function FooterMenuPage() {
         ]);
     };
 
-    const updateMainMenu = (index: number, field: "title" | "url", value: string) => {
+    /**
+     * Apply a picked link to a menu row.
+     *
+     * Takes the whole patch rather than one field: the picker sets title, url,
+     * page_id and source together, and writing them one at a time would leave
+     * the row briefly pointing at the old page under the new title.
+     */
+    const updateMainMenu = (index: number, patch: LinkValue) => {
         const updated = [...mainMenu];
-        updated[index][field] = value;
+        updated[index] = { ...updated[index], ...patch };
         setMainMenu(updated);
     };
 
@@ -139,15 +187,10 @@ export default function FooterMenuPage() {
         setMainMenu(updated);
     };
 
-    const updateChildMenu = (
-        mainIndex: number,
-        childIndex: number,
-        field: "title" | "url",
-        value: string
-    ) => {
+    const updateChildMenu = (mainIndex: number, childIndex: number, patch: LinkValue) => {
         const updated = [...mainMenu];
         const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
-        childMenu[childIndex][field] = value;
+        childMenu[childIndex] = { ...childMenu[childIndex], ...patch };
         setMainMenu(updated);
     };
 
@@ -190,13 +233,12 @@ export default function FooterMenuPage() {
         mainIndex: number,
         childIndex: number,
         subChildIndex: number,
-        field: "title" | "url",
-        value: string
+        patch: LinkValue
     ) => {
         const updated = [...mainMenu];
         const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
         const subChildMenu = childMenu[childIndex].sub_child_menu as SubChildMenuItem[];
-        subChildMenu[subChildIndex][field] = value;
+        subChildMenu[subChildIndex] = { ...subChildMenu[subChildIndex], ...patch };
         setMainMenu(updated);
     };
 
@@ -532,26 +574,16 @@ export default function FooterMenuPage() {
                         >
                             {/* Main Menu Item */}
                             <div className="space-y-3">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-300">Main Title</label>
-                                        <Input
-                                            value={mainItem.title}
-                                            onChange={(e) => updateMainMenu(mainIndex, "title", e.target.value)}
-                                            placeholder="Main Menu Title"
-                                            className="bg-slate-900/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-300">Main URL</label>
-                                        <Input
-                                            value={mainItem.url}
-                                            onChange={(e) => updateMainMenu(mainIndex, "url", e.target.value)}
-                                            placeholder="/main-url"
-                                            className="bg-slate-900/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                                        />
-                                    </div>
-                                </div>
+                                {/* A footer column heading is usually a label with no page of
+                                    its own, which the picker supports directly. Any entry that
+                                    does link is a page chosen here, never a slug retyped. */}
+                                <LinkPicker
+                                    value={mainItem}
+                                    pages={pages}
+                                    loading={pagesLoading}
+                                    onChange={(link) => updateMainMenu(mainIndex, link)}
+                                    placeholder="Choose the page this column heading links to"
+                                />
                                 <div className="flex items-center justify-end gap-2">
                                     <Button
                                         onClick={() => toggleChildMenu(mainIndex)}
@@ -587,36 +619,21 @@ export default function FooterMenuPage() {
                                         </Button>
                                     </div>
 
-                                    {(mainItem.child_menu as ChildMenuItem[]).map((childItem, childIndex) => (
+                                    {asList<ChildMenuItem>(mainItem.child_menu).map((childItem, childIndex) => (
                                         <div
                                             key={childIndex}
                                             className="bg-slate-900/50 border border-slate-700 rounded-lg p-4 space-y-4"
                                         >
                                             <div className="space-y-3">
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="space-y-2">
-                                                        <label className="text-sm font-medium text-slate-300">Child Title</label>
-                                                        <Input
-                                                            value={childItem.title}
-                                                            onChange={(e) =>
-                                                                updateChildMenu(mainIndex, childIndex, "title", e.target.value)
-                                                            }
-                                                            placeholder="Child Menu Title"
-                                                            className="bg-slate-800/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <label className="text-sm font-medium text-slate-300">Child URL</label>
-                                                        <Input
-                                                            value={childItem.url}
-                                                            onChange={(e) =>
-                                                                updateChildMenu(mainIndex, childIndex, "url", e.target.value)
-                                                            }
-                                                            placeholder="/child-url"
-                                                            className="bg-slate-800/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                                                        />
-                                                    </div>
-                                                </div>
+                                                <LinkPicker
+                                                    value={childItem}
+                                                    pages={pages}
+                                                    loading={pagesLoading}
+                                                    onChange={(link) =>
+                                                        updateChildMenu(mainIndex, childIndex, link)
+                                                    }
+                                                    placeholder="Choose a page for this footer link"
+                                                />
                                                 <div className="flex items-center justify-end gap-2 pt-2">
                                                     <Button
                                                         onClick={() => toggleSubChildMenu(mainIndex, childIndex)}
@@ -653,53 +670,28 @@ export default function FooterMenuPage() {
                                                         </Button>
                                                     </div>
 
-                                                    {(childItem.sub_child_menu as SubChildMenuItem[]).map(
+                                                    {asList<SubChildMenuItem>(childItem.sub_child_menu).map(
                                                         (subChildItem, subChildIndex) => (
                                                             <div
                                                                 key={subChildIndex}
                                                                 className="bg-slate-800/30 border border-slate-600 rounded-lg p-4 space-y-3"
                                                             >
                                                                 <div className="space-y-3">
-                                                                    <div className="grid grid-cols-2 gap-4">
-                                                                        <div className="space-y-2">
-                                                                            <label className="text-xs font-medium text-slate-400">
-                                                                                Sub Child Title
-                                                                            </label>
-                                                                            <Input
-                                                                                value={subChildItem.title}
-                                                                                onChange={(e) =>
-                                                                                    updateSubChildMenu(
-                                                                                        mainIndex,
-                                                                                        childIndex,
-                                                                                        subChildIndex,
-                                                                                        "title",
-                                                                                        e.target.value
-                                                                                    )
-                                                                                }
-                                                                                placeholder="Sub Child Menu Title"
-                                                                                className="bg-slate-700/60 border-slate-500 text-white placeholder-slate-400 h-9 text-sm"
-                                                                            />
-                                                                        </div>
-                                                                        <div className="space-y-2">
-                                                                            <label className="text-xs font-medium text-slate-400">
-                                                                                Sub Child URL
-                                                                            </label>
-                                                                            <Input
-                                                                                value={subChildItem.url}
-                                                                                onChange={(e) =>
-                                                                                    updateSubChildMenu(
-                                                                                        mainIndex,
-                                                                                        childIndex,
-                                                                                        subChildIndex,
-                                                                                        "url",
-                                                                                        e.target.value
-                                                                                    )
-                                                                                }
-                                                                                placeholder="/sub-child-url"
-                                                                                className="bg-slate-700/60 border-slate-500 text-white placeholder-slate-400 h-9 text-sm"
-                                                                            />
-                                                                        </div>
-                                                                    </div>
+                                                                    <LinkPicker
+                                                                        size="sm"
+                                                                        value={subChildItem}
+                                                                        pages={pages}
+                                                                        loading={pagesLoading}
+                                                                        onChange={(link) =>
+                                                                            updateSubChildMenu(
+                                                                                mainIndex,
+                                                                                childIndex,
+                                                                                subChildIndex,
+                                                                                link
+                                                                            )
+                                                                        }
+                                                                        placeholder="Choose a page for this nested link"
+                                                                    />
                                                                     <div className="flex items-center gap-2 pt-2">
                                                                         <Button
                                                                             onClick={() =>
@@ -997,7 +989,7 @@ export default function FooterMenuPage() {
                                         </Button>
                                     </div>
 
-                                    {(contactItem.sub_child as ContactDetailSubChild[]).map(
+                                    {asList<ContactDetailSubChild>(contactItem.sub_child).map(
                                         (subChildItem, subChildIndex) => (
                                             <div
                                                 key={subChildIndex}
