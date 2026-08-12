@@ -6,34 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-interface SubSubChildMenuItem {
-  sub_sub_child_title: string;
-  sub_sub_child_url: string;
-}
-
-interface SubChildMenuItem {
-  title: string;
-  url: string;
-  sub_sub_child_menu: SubSubChildMenuItem[] | false;
-}
-
-interface ChildMenuItem {
-  title: string;
-  url: string;
-  sub_child_menu: SubChildMenuItem[] | false;
-}
-
-interface MainMenuItem {
-  title: string;
-  url: string;
-  child_menu: ChildMenuItem[] | false;
-}
+import type { PickablePage } from "@/app/lib/constants/sitePages";
+import type {
+  ChildMenuItem,
+  MainMenuItem,
+  MenuLinkSource,
+  SubChildMenuItem,
+  SubSubChildMenuItem,
+} from "@/app/lib/utils/menuTree";
+import { LinkPicker, type LinkValue } from "./link-picker";
 
 /**
  * The single call-to-action button in the site header.
  *
  * This used to also carry whatsappLabel / whatsappNumber / careLabel /
- * careNumber, describing a utility bar the Rebellabz header does not
+ * careNumber, describing a utility bar the Rebel Labz header does not
  * have — inherited from the project this CMS was forked from. Those four
  * fields rendered nowhere, so they were removed rather than left on screen
  * implying they did something.
@@ -43,33 +30,62 @@ interface HeaderContactDetails {
   ctaUrl: string;
 }
 
-// Matches what the site shows today, so saving without editing is a no-op
-// instead of silently relabelling the button and pointing it at a dead URL.
+/**
+ * Matches what the site shows today, so saving without editing is a no-op
+ * instead of silently relabelling the button and pointing it at a dead URL.
+ * Mirrors HEADER_CTA in the frontend's lib/content.ts — the fallback the site
+ * uses when this menu is empty.
+ */
 const defaultContactDetails: HeaderContactDetails = {
-  ctaText: "Request Technical Crew",
-  ctaUrl: "/contact-us",
+  ctaText: "Collaborate with us",
+  ctaUrl: "/contact",
 };
+
+/** The picker speaks {title, url}; the deepest level is stored under its own
+ *  inherited key names. Converting at the boundary keeps one picker for all
+ *  four levels without renaming fields in documents already saved. */
+const leafToLink = (item: SubSubChildMenuItem): LinkValue => ({
+  title: item.sub_sub_child_title,
+  url: item.sub_sub_child_url,
+  page_id: item.page_id,
+  source: item.source,
+});
+
+const linkToLeaf = (link: LinkValue): SubSubChildMenuItem => ({
+  sub_sub_child_title: link.title,
+  sub_sub_child_url: link.url,
+  page_id: link.page_id,
+  source: link.source,
+});
 
 export default function HeaderMenuPage() {
   const [mainMenu, setMainMenu] = useState<MainMenuItem[]>([]);
-  const [contactDetails, setContactDetails] = useState<HeaderContactDetails>(defaultContactDetails);
+  const [contactDetails, setContactDetails] =
+    useState<HeaderContactDetails>(defaultContactDetails);
+  /**
+   * Whether the CTA's destination is being picked or typed. Editor-only state:
+   * the button stores a bare URL, and which way it was chosen changes nothing
+   * about how the site renders it.
+   */
+  const [ctaSource, setCtaSource] = useState<MenuLinkSource>("page");
+  const [pages, setPages] = useState<PickablePage[]>([]);
+  const [pagesLoading, setPagesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const updateContact = (field: keyof HeaderContactDetails, value: string) =>
-    setContactDetails((p) => ({ ...p, [field]: value }));
-
-  // Fetch header menu
   useEffect(() => {
     fetchHeaderMenu();
+    fetchPages();
   }, []);
 
+  // Both loaders start from their `true` initial state and only ever clear it,
+  // so neither touches state synchronously — a setState in an effect body
+  // cascades an extra render before the request has even gone out.
   const fetchHeaderMenu = async () => {
     try {
-      setLoading(true);
       const res = await fetch("/api/header-menu");
       const data = await res.json();
-      
+
       if (data.success && data.headerMenu) {
         setMainMenu(data.headerMenu.main_menu || []);
         // Read the two fields explicitly rather than spreading the stored
@@ -78,54 +94,74 @@ export default function HeaderMenuPage() {
         // on the next save.
         const stored = data.headerMenu.contact_details || {};
         setContactDetails({
-          ctaText: stored.ctaText ?? defaultContactDetails.ctaText,
-          ctaUrl: stored.ctaUrl ?? defaultContactDetails.ctaUrl,
+          ctaText: stored.ctaText || defaultContactDetails.ctaText,
+          ctaUrl: stored.ctaUrl || defaultContactDetails.ctaUrl,
         });
       }
     } catch (error) {
       console.error("Error fetching header menu:", error);
-      toast.error("Failed to load header menu", {
-        closeButton: true
-      });
+      toast.error("Failed to load header menu", { closeButton: true });
     } finally {
       setLoading(false);
     }
   };
 
-  // Main Menu Functions
-  const addMainMenu = () => {
-    setMainMenu([
-      ...mainMenu,
-      { title: "", url: "", child_menu: false },
-    ]);
+  /**
+   * Every page a menu entry can point at. Fetched once for the whole editor
+   * rather than per picker — a menu with a dozen entries would otherwise fire a
+   * dozen identical requests, and every picker offers the same list.
+   */
+  const fetchPages = async () => {
+    try {
+      const res = await fetch("/api/site-pages");
+      const data = await res.json();
+      if (data.success) setPages(data.pages ?? []);
+      else toast.error("Failed to load the page list", { closeButton: true });
+    } catch (error) {
+      console.error("Error fetching site pages:", error);
+      toast.error("Failed to load the page list", { closeButton: true });
+    } finally {
+      setPagesLoading(false);
+    }
   };
 
-  const updateMainMenu = (index: number, field: "title" | "url", value: string) => {
+  const updateContact = (field: keyof HeaderContactDetails, value: string) =>
+    setContactDetails((p) => ({ ...p, [field]: value }));
+
+  /* ── Main menu ────────────────────────────────────────────────────────── */
+
+  const addMainMenu = () =>
+    setMainMenu([...mainMenu, { title: "", url: "", child_menu: false }]);
+
+  const updateMainMenu = (index: number, link: LinkValue) => {
     const updated = [...mainMenu];
-    updated[index][field] = value;
+    updated[index] = { ...updated[index], ...link };
     setMainMenu(updated);
   };
 
-  const removeMainMenu = (index: number) => {
+  const removeMainMenu = (index: number) =>
     setMainMenu(mainMenu.filter((_, i) => i !== index));
-  };
 
   const toggleChildMenu = (mainIndex: number) => {
     const updated = [...mainMenu];
-    if (updated[mainIndex].child_menu === false) {
-      updated[mainIndex].child_menu = [];
-    } else {
-      updated[mainIndex].child_menu = false;
+    const opening = updated[mainIndex].child_menu === false;
+    updated[mainIndex].child_menu = opening ? [] : false;
+
+    // Turning an entry into a dropdown when nothing is attached to it yet means
+    // a group like "Solutions" — a heading over the pages, not a page itself.
+    // Pre-selecting that is the difference between one click and hunting for
+    // the option inside the picker.
+    if (opening && !updated[mainIndex].url && !updated[mainIndex].page_id) {
+      updated[mainIndex].source = "label";
     }
     setMainMenu(updated);
   };
 
-  // Child Menu Functions
+  /* ── Child menu ───────────────────────────────────────────────────────── */
+
   const addChildMenu = (mainIndex: number) => {
     const updated = [...mainMenu];
-    if (updated[mainIndex].child_menu === false) {
-      updated[mainIndex].child_menu = [];
-    }
+    if (updated[mainIndex].child_menu === false) updated[mainIndex].child_menu = [];
     (updated[mainIndex].child_menu as ChildMenuItem[]).push({
       title: "",
       url: "",
@@ -134,15 +170,10 @@ export default function HeaderMenuPage() {
     setMainMenu(updated);
   };
 
-  const updateChildMenu = (
-    mainIndex: number,
-    childIndex: number,
-    field: "title" | "url",
-    value: string
-  ) => {
+  const updateChildMenu = (mainIndex: number, childIndex: number, link: LinkValue) => {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
-    childMenu[childIndex][field] = value;
+    childMenu[childIndex] = { ...childMenu[childIndex], ...link };
     setMainMenu(updated);
   };
 
@@ -150,30 +181,25 @@ export default function HeaderMenuPage() {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
     childMenu.splice(childIndex, 1);
-    if (childMenu.length === 0) {
-      updated[mainIndex].child_menu = false;
-    }
+    if (childMenu.length === 0) updated[mainIndex].child_menu = false;
     setMainMenu(updated);
   };
 
   const toggleSubChildMenu = (mainIndex: number, childIndex: number) => {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
-    if (childMenu[childIndex].sub_child_menu === false) {
-      childMenu[childIndex].sub_child_menu = [];
-    } else {
-      childMenu[childIndex].sub_child_menu = false;
-    }
+    childMenu[childIndex].sub_child_menu =
+      childMenu[childIndex].sub_child_menu === false ? [] : false;
     setMainMenu(updated);
   };
 
-  // Sub Child Menu Functions
+  /* ── Sub child menu ───────────────────────────────────────────────────── */
+
   const addSubChildMenu = (mainIndex: number, childIndex: number) => {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
-    if (childMenu[childIndex].sub_child_menu === false) {
+    if (childMenu[childIndex].sub_child_menu === false)
       childMenu[childIndex].sub_child_menu = [];
-    }
     (childMenu[childIndex].sub_child_menu as SubChildMenuItem[]).push({
       title: "",
       url: "",
@@ -186,13 +212,12 @@ export default function HeaderMenuPage() {
     mainIndex: number,
     childIndex: number,
     subChildIndex: number,
-    field: "title" | "url",
-    value: string
+    link: LinkValue
   ) => {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
     const subChildMenu = childMenu[childIndex].sub_child_menu as SubChildMenuItem[];
-    subChildMenu[subChildIndex][field] = value;
+    subChildMenu[subChildIndex] = { ...subChildMenu[subChildIndex], ...link };
     setMainMenu(updated);
   };
 
@@ -205,9 +230,7 @@ export default function HeaderMenuPage() {
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
     const subChildMenu = childMenu[childIndex].sub_child_menu as SubChildMenuItem[];
     subChildMenu.splice(subChildIndex, 1);
-    if (subChildMenu.length === 0) {
-      childMenu[childIndex].sub_child_menu = false;
-    }
+    if (subChildMenu.length === 0) childMenu[childIndex].sub_child_menu = false;
     setMainMenu(updated);
   };
 
@@ -219,15 +242,13 @@ export default function HeaderMenuPage() {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
     const subChildMenu = childMenu[childIndex].sub_child_menu as SubChildMenuItem[];
-    if (subChildMenu[subChildIndex].sub_sub_child_menu === false) {
-      subChildMenu[subChildIndex].sub_sub_child_menu = [];
-    } else {
-      subChildMenu[subChildIndex].sub_sub_child_menu = false;
-    }
+    subChildMenu[subChildIndex].sub_sub_child_menu =
+      subChildMenu[subChildIndex].sub_sub_child_menu === false ? [] : false;
     setMainMenu(updated);
   };
 
-  // Sub Sub Child Menu Functions
+  /* ── Sub sub child menu ───────────────────────────────────────────────── */
+
   const addSubSubChildMenu = (
     mainIndex: number,
     childIndex: number,
@@ -236,9 +257,8 @@ export default function HeaderMenuPage() {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
     const subChildMenu = childMenu[childIndex].sub_child_menu as SubChildMenuItem[];
-    if (subChildMenu[subChildIndex].sub_sub_child_menu === false) {
+    if (subChildMenu[subChildIndex].sub_sub_child_menu === false)
       subChildMenu[subChildIndex].sub_sub_child_menu = [];
-    }
     (subChildMenu[subChildIndex].sub_sub_child_menu as SubSubChildMenuItem[]).push({
       sub_sub_child_title: "",
       sub_sub_child_url: "",
@@ -251,14 +271,14 @@ export default function HeaderMenuPage() {
     childIndex: number,
     subChildIndex: number,
     subSubChildIndex: number,
-    field: "sub_sub_child_title" | "sub_sub_child_url",
-    value: string
+    link: LinkValue
   ) => {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
     const subChildMenu = childMenu[childIndex].sub_child_menu as SubChildMenuItem[];
-    const subSubChildMenu = subChildMenu[subChildIndex].sub_sub_child_menu as SubSubChildMenuItem[];
-    subSubChildMenu[subSubChildIndex][field] = value;
+    const subSubChildMenu = subChildMenu[subChildIndex]
+      .sub_sub_child_menu as SubSubChildMenuItem[];
+    subSubChildMenu[subSubChildIndex] = linkToLeaf(link);
     setMainMenu(updated);
   };
 
@@ -271,13 +291,15 @@ export default function HeaderMenuPage() {
     const updated = [...mainMenu];
     const childMenu = updated[mainIndex].child_menu as ChildMenuItem[];
     const subChildMenu = childMenu[childIndex].sub_child_menu as SubChildMenuItem[];
-    const subSubChildMenu = subChildMenu[subChildIndex].sub_sub_child_menu as SubSubChildMenuItem[];
+    const subSubChildMenu = subChildMenu[subChildIndex]
+      .sub_sub_child_menu as SubSubChildMenuItem[];
     subSubChildMenu.splice(subSubChildIndex, 1);
-    if (subSubChildMenu.length === 0) {
+    if (subSubChildMenu.length === 0)
       subChildMenu[subChildIndex].sub_sub_child_menu = false;
-    }
     setMainMenu(updated);
   };
+
+  /* ── Save / revalidate ────────────────────────────────────────────────── */
 
   const handleRevalidate = async () => {
     const toastId = toast.loading("Revalidating cache...");
@@ -302,9 +324,7 @@ export default function HeaderMenuPage() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const loadingToastId = toast.loading("Saving header menu...", {
-        closeButton: true
-      });
+      const loadingToastId = toast.loading("Saving header menu...", { closeButton: true });
 
       const res = await fetch("/api/header-menu", {
         method: "PUT",
@@ -316,18 +336,16 @@ export default function HeaderMenuPage() {
       toast.dismiss(loadingToastId);
 
       if (res.ok && data.success) {
-        toast.success("Header menu saved successfully!", {
-          closeButton: true,
-        });
+        // The API drops entries with no label, so re-seed state from what was
+        // actually stored — otherwise the editor keeps showing a row the site
+        // will never render.
+        if (data.headerMenu?.main_menu) setMainMenu(data.headerMenu.main_menu);
+        toast.success("Header menu saved successfully!", { closeButton: true });
       } else {
-        toast.error(data.message || "Failed to save header menu", {
-          closeButton: true,
-        });
+        toast.error(data.message || "Failed to save header menu", { closeButton: true });
       }
-    } catch (error) {
-      toast.error("Failed to save header menu", {
-        closeButton: true,
-      });
+    } catch {
+      toast.error("Failed to save header menu", { closeButton: true });
     } finally {
       setSaving(false);
     }
@@ -370,13 +388,13 @@ export default function HeaderMenuPage() {
           </div>
         </div>
 
-        {/* Header CTA — the single orange button on the right of the nav */}
+        {/* Header CTA — the single red button on the right of the nav */}
         <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl p-5 space-y-4">
           <div>
             <h2 className="text-xl font-semibold text-white">Header CTA Button</h2>
             <p className="text-sm text-slate-400">
-              The orange button on the right of the navigation. Leave both fields
-              blank to keep the site&rsquo;s default button.
+              The red button on the right of the navigation. Leave the label blank
+              to keep the site&rsquo;s default button.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -385,22 +403,23 @@ export default function HeaderMenuPage() {
               <Input
                 value={contactDetails.ctaText}
                 onChange={(e) => updateContact("ctaText", e.target.value)}
-                placeholder="Request Technical Crew"
+                placeholder={defaultContactDetails.ctaText}
                 className="bg-slate-900/60 border-slate-600 text-white placeholder-slate-400 h-10"
               />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-300">Button Link</label>
-              <Input
-                value={contactDetails.ctaUrl}
-                onChange={(e) => updateContact("ctaUrl", e.target.value)}
-                placeholder="/contact-us"
-                className="bg-slate-900/60 border-slate-600 text-white placeholder-slate-400 h-10"
+              <LinkPicker
+                urlOnly
+                value={{ title: "", url: contactDetails.ctaUrl, source: ctaSource }}
+                pages={pages}
+                loading={pagesLoading}
+                onChange={(link) => {
+                  setCtaSource(link.source ?? "page");
+                  updateContact("ctaUrl", link.url);
+                }}
+                placeholder="Choose the page this button opens"
               />
-              <p className="text-xs text-slate-500">
-                A path on this site, e.g. <code>/contact-us</code>, or a full
-                URL. Check the page exists — a wrong path gives visitors a 404.
-              </p>
             </div>
           </div>
         </div>
@@ -411,15 +430,19 @@ export default function HeaderMenuPage() {
             <div>
               <h2 className="text-xl font-semibold text-white">Main Menu</h2>
               <p className="text-sm text-slate-400">
-                The links across the site header. Add child items to turn an
-                entry into a dropdown — a dropdown ignores its own URL. Leave
-                this empty to keep the site&rsquo;s default navigation.
+                The links across the site header, in this order. Each entry is a
+                page you pick — search and attach it, no URLs to type. Add child
+                items to turn an entry into a dropdown that opens on hover; a
+                dropdown is a heading over its children and is not itself
+                clickable. Children can nest again, and the site renders every
+                level. Leave this empty to keep the site&rsquo;s default
+                navigation.
               </p>
             </div>
             <Button
               onClick={addMainMenu}
               size="sm"
-              className="bg-indigo-500 hover:bg-indigo-600 text-white  !gap-0"
+              className="bg-indigo-500 hover:bg-indigo-600 text-white !gap-0"
             >
               <Plus className="h-4 w-4 mr-2" />
               Add Main Menu
@@ -433,26 +456,23 @@ export default function HeaderMenuPage() {
             >
               {/* Main Menu Item */}
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-300">Main Title</label>
-                    <Input
-                      value={mainItem.title}
-                      onChange={(e) => updateMainMenu(mainIndex, "title", e.target.value)}
-                      placeholder="Main Menu Title"
-                      className="bg-slate-900/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-300">Main URL</label>
-                    <Input
-                      value={mainItem.url}
-                      onChange={(e) => updateMainMenu(mainIndex, "url", e.target.value)}
-                      placeholder="/main-url"
-                      className="bg-slate-900/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                    />
-                  </div>
-                </div>
+                <label className="text-sm font-medium text-slate-300">
+                  Main link {mainIndex + 1}
+                </label>
+                <LinkPicker
+                  value={mainItem}
+                  pages={pages}
+                  loading={pagesLoading}
+                  onChange={(link) => updateMainMenu(mainIndex, link)}
+                  placeholder="Choose the page this menu item opens"
+                />
+                {mainItem.child_menu !== false && (
+                  <p className="text-xs text-slate-500">
+                    This entry is a dropdown: the site shows its label in the bar
+                    and opens the children below on hover — its own link is never
+                    followed.
+                  </p>
+                )}
                 <div className="flex items-center justify-end gap-2">
                   <Button
                     onClick={() => toggleChildMenu(mainIndex)}
@@ -495,30 +515,16 @@ export default function HeaderMenuPage() {
                     >
                       {/* Child Menu Item */}
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-300">Child Title</label>
-                            <Input
-                              value={childItem.title}
-                              onChange={(e) =>
-                                updateChildMenu(mainIndex, childIndex, "title", e.target.value)
-                              }
-                              placeholder="Child Menu Title"
-                              className="bg-slate-800/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-300">Child URL</label>
-                            <Input
-                              value={childItem.url}
-                              onChange={(e) =>
-                                updateChildMenu(mainIndex, childIndex, "url", e.target.value)
-                              }
-                              placeholder="/child-url"
-                              className="bg-slate-800/60 border-slate-600 text-white placeholder-slate-400 h-10"
-                            />
-                          </div>
-                        </div>
+                        <label className="text-sm font-medium text-slate-300">
+                          Child link {childIndex + 1}
+                        </label>
+                        <LinkPicker
+                          value={childItem}
+                          pages={pages}
+                          loading={pagesLoading}
+                          onChange={(link) => updateChildMenu(mainIndex, childIndex, link)}
+                          placeholder="Choose a page for this dropdown item"
+                        />
                         <div className="flex items-center justify-end gap-2 pt-2">
                           <Button
                             onClick={() => toggleSubChildMenu(mainIndex, childIndex)}
@@ -545,7 +551,9 @@ export default function HeaderMenuPage() {
                       {childItem.sub_child_menu !== false && (
                         <div className="ml-4 border-l-2 border-indigo-400/30 pl-4 space-y-3 mt-4">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-semibold text-slate-400">Sub Child Menu</h4>
+                            <h4 className="text-sm font-semibold text-slate-400">
+                              Sub Child Menu
+                            </h4>
                             <Button
                               onClick={() => addSubChildMenu(mainIndex, childIndex)}
                               size="sm"
@@ -562,52 +570,33 @@ export default function HeaderMenuPage() {
                                 key={subChildIndex}
                                 className="bg-slate-800/30 border border-slate-600 rounded-lg p-4 space-y-3"
                               >
-                                {/* Sub Child Menu Item */}
                                 <div className="space-y-3">
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                      <label className="text-xs font-medium text-slate-400">
-                                        Sub Child Title
-                                      </label>
-                                      <Input
-                                        value={subChildItem.title}
-                                        onChange={(e) =>
-                                          updateSubChildMenu(
-                                            mainIndex,
-                                            childIndex,
-                                            subChildIndex,
-                                            "title",
-                                            e.target.value
-                                          )
-                                        }
-                                        placeholder="Sub Child Menu Title"
-                                        className="bg-slate-700/60 border-slate-500 text-white placeholder-slate-400 h-9 text-sm"
-                                      />
-                                    </div>
-                                    <div className="space-y-2">
-                                      <label className="text-xs font-medium text-slate-400">
-                                        Sub Child URL
-                                      </label>
-                                      <Input
-                                        value={subChildItem.url}
-                                        onChange={(e) =>
-                                          updateSubChildMenu(
-                                            mainIndex,
-                                            childIndex,
-                                            subChildIndex,
-                                            "url",
-                                            e.target.value
-                                          )
-                                        }
-                                        placeholder="/sub-child-url"
-                                        className="bg-slate-700/60 border-slate-500 text-white placeholder-slate-400 h-9 text-sm"
-                                      />
-                                    </div>
-                                  </div>
+                                  <label className="text-xs font-medium text-slate-400">
+                                    Sub child link {subChildIndex + 1}
+                                  </label>
+                                  <LinkPicker
+                                    size="sm"
+                                    value={subChildItem}
+                                    pages={pages}
+                                    loading={pagesLoading}
+                                    onChange={(link) =>
+                                      updateSubChildMenu(
+                                        mainIndex,
+                                        childIndex,
+                                        subChildIndex,
+                                        link
+                                      )
+                                    }
+                                    placeholder="Choose a page"
+                                  />
                                   <div className="flex items-center gap-2 pt-2">
                                     <Button
                                       onClick={() =>
-                                        toggleSubSubChildMenu(mainIndex, childIndex, subChildIndex)
+                                        toggleSubSubChildMenu(
+                                          mainIndex,
+                                          childIndex,
+                                          subChildIndex
+                                        )
                                       }
                                       size="sm"
                                       variant="outline"
@@ -649,72 +638,48 @@ export default function HeaderMenuPage() {
                                       </Button>
                                     </div>
 
-                                    {(subChildItem.sub_sub_child_menu as SubSubChildMenuItem[]).map(
-                                      (subSubChildItem, subSubChildIndex) => (
-                                        <div
-                                          key={subSubChildIndex}
-                                          className="flex items-start gap-3 bg-slate-700/20 border border-slate-500 rounded-lg p-3"
-                                        >
-                                          <div className="flex-1 grid grid-cols-2 gap-3">
-                                            <div className="space-y-1.5">
-                                              <label className="text-xs font-medium text-slate-500">
-                                                Sub Sub Child Title
-                                              </label>
-                                              <Input
-                                                value={subSubChildItem.sub_sub_child_title}
-                                                onChange={(e) =>
-                                                  updateSubSubChildMenu(
-                                                    mainIndex,
-                                                    childIndex,
-                                                    subChildIndex,
-                                                    subSubChildIndex,
-                                                    "sub_sub_child_title",
-                                                    e.target.value
-                                                  )
-                                                }
-                                                placeholder="Sub Sub Child Title"
-                                                className="bg-slate-600/60 border-slate-500 text-white placeholder-slate-400 h-8 text-xs"
-                                              />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                              <label className="text-xs font-medium text-slate-500">
-                                                Sub Sub Child URL
-                                              </label>
-                                              <Input
-                                                value={subSubChildItem.sub_sub_child_url}
-                                                onChange={(e) =>
-                                                  updateSubSubChildMenu(
-                                                    mainIndex,
-                                                    childIndex,
-                                                    subChildIndex,
-                                                    subSubChildIndex,
-                                                    "sub_sub_child_url",
-                                                    e.target.value
-                                                  )
-                                                }
-                                                placeholder="/sub-sub-child-url"
-                                                className="bg-slate-600/60 border-slate-500 text-white placeholder-slate-400 h-8 text-xs"
-                                              />
-                                            </div>
-                                          </div>
-                                          <Button
-                                            onClick={() =>
-                                              removeSubSubChildMenu(
+                                    {(
+                                      subChildItem.sub_sub_child_menu as SubSubChildMenuItem[]
+                                    ).map((subSubChildItem, subSubChildIndex) => (
+                                      <div
+                                        key={subSubChildIndex}
+                                        className="flex items-start gap-3 bg-slate-700/20 border border-slate-500 rounded-lg p-3"
+                                      >
+                                        <div className="min-w-0 flex-1">
+                                          <LinkPicker
+                                            size="sm"
+                                            value={leafToLink(subSubChildItem)}
+                                            pages={pages}
+                                            loading={pagesLoading}
+                                            onChange={(link) =>
+                                              updateSubSubChildMenu(
                                                 mainIndex,
                                                 childIndex,
                                                 subChildIndex,
-                                                subSubChildIndex
+                                                subSubChildIndex,
+                                                link
                                               )
                                             }
-                                            size="sm"
-                                            variant="ghost"
-                                            className="text-red-400 hover:text-red-300 hover:bg-red-500/20 h-8 w-8 p-0 mt-6 flex-shrink-0"
-                                          >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </Button>
+                                            placeholder="Choose a page"
+                                          />
                                         </div>
-                                      )
-                                    )}
+                                        <Button
+                                          onClick={() =>
+                                            removeSubSubChildMenu(
+                                              mainIndex,
+                                              childIndex,
+                                              subChildIndex,
+                                              subSubChildIndex
+                                            )
+                                          }
+                                          size="sm"
+                                          variant="ghost"
+                                          className="text-red-400 hover:text-red-300 hover:bg-red-500/20 h-8 w-8 p-0 flex-shrink-0"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
                               </div>
@@ -731,7 +696,10 @@ export default function HeaderMenuPage() {
 
           {mainMenu.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-slate-400">No main menu items. Click "Add Main Menu" to get started.</p>
+              <p className="text-slate-400">
+                No main menu items — the site is showing its default navigation.
+                Click &ldquo;Add Main Menu&rdquo; to take control of it.
+              </p>
             </div>
           )}
         </div>

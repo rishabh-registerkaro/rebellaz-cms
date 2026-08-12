@@ -8,7 +8,8 @@
 // name had been find-replaced throughout, which made them look legitimate.
 //
 // Rebellabz has one service layout ("division"), rendered by the
-// frontend's app/services/[slug]/page.tsx. That page finds each block by the
+// frontend's app/(rebel)/solutions/[slug]/page.tsx — one route serves both
+// templates, and there is no /services/[slug]. That page finds each block by the
 // section's `id`, so the template below scaffolds exactly the ids it expects.
 // Starting from it is the reliable way to add a service page: the structure is
 // already correct and only the copy needs changing.
