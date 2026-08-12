@@ -6,6 +6,7 @@ import { Prisma, PublishStatus } from "@prisma/client";
 import { requireRole } from "@/app/lib/utils/authorization";
 import { ADMIN_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags, serviceTags } from "@/app/lib/utils/revalidateFrontend";
+import { servicePageTitle } from "@/app/lib/utils/servicePage";
 
 export async function POST(req: NextRequest) {
   try {
@@ -121,15 +122,13 @@ export async function GET(req:NextRequest) {
     ]);
 
     const servicePages = withMongoIds(
-      rows.map(({ content, ...rest }) => {
-        const c = content as { titleLead?: string; titleAccent?: string; badge?: string } | null;
-        const title =
-          [c?.titleLead, c?.titleAccent].filter(Boolean).join(" ") ||
-          c?.badge ||
-          rest.metaTitle ||
-          "";
-        return { ...rest, title };
-      })
+      // Two content shapes live here — see servicePageTitle(), which the menu
+      // link picker reads through as well so a page cannot show one name in
+      // this table and another in the header.
+      rows.map(({ content, ...rest }) => ({
+        ...rest,
+        title: servicePageTitle(content),
+      }))
     );
 
     const totalPages = Math.ceil(total / limit);

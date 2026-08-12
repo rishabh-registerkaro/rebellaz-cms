@@ -8,6 +8,8 @@ import ServicePageForm, {
   normalizeContent,
   type ServicePageFormData,
 } from "../service-page-form";
+import SolutionPageForm from "../solution-page-form";
+import { withSolutionDefaults } from "@/app/lib/content/solution-content";
 
 function UpdateServiceLoading() {
   return (
@@ -26,6 +28,16 @@ function UpdateServiceInner() {
   const slug = searchParams.get("slug") || "";
 
   const [initialData, setInitialData] = useState<ServicePageFormData | null>(null);
+  // The raw record: "solution" pages use a different content shape, and running
+  // them through normalizeContent() (built for the section builder) would
+  // discard it.
+  const [raw, setRaw] = useState<{
+    slug: string;
+    template: string;
+    metaTitle: string;
+    metaDescription: string;
+    content: unknown;
+  } | null>(null);
   const [status, setStatus] = useState<"draft" | "published">("draft");
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +57,13 @@ function UpdateServiceInner() {
           return;
         }
         const page = data.data;
+        setRaw({
+          slug: page.slug ?? slug,
+          template: page.template ?? "division",
+          metaTitle: page.metaTitle ?? "",
+          metaDescription: page.metaDescription ?? "",
+          content: page.content,
+        });
         setInitialData({
           slug: page.slug ?? slug,
           template: page.template ?? "division",
@@ -76,6 +95,24 @@ function UpdateServiceInner() {
   }
 
   if (!initialData) return <UpdateServiceLoading />;
+
+  // Two templates, two editors. Rendering the section-builder against a
+  // solution page showed empty fields and, worse, would have overwritten its
+  // content on save.
+  if (raw?.template === "solution") {
+    return (
+      <SolutionPageForm
+        isNew={false}
+        status={status}
+        initial={{
+          slug: raw.slug,
+          metaTitle: raw.metaTitle,
+          metaDescription: raw.metaDescription,
+          content: withSolutionDefaults(raw.content),
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-950 to-slate-900 p-6">

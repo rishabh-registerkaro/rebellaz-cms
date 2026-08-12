@@ -104,6 +104,28 @@ export async function PUT(
           { status: 400 }
         );
       }
+      // A published page's layout is fixed. Changing it adds or removes whole
+      // sections from a URL people already have, so it must go through an
+      // unpublish first. The dashboard disables the picker; this closes the
+      // same door on the API, which the dashboard is only one caller of.
+      const incoming = rest.content as { layout?: string };
+      const current = existingPage.content as { layout?: string } | null;
+      if (
+        existingPage.status === "published" &&
+        existingPage.template === "solution" &&
+        incoming?.layout &&
+        current?.layout &&
+        incoming.layout !== current.layout
+      ) {
+        return NextResponse.json(
+          {
+            message:
+              "This page is published, so its layout is locked. Save it as a draft before changing the layout.",
+          },
+          { status: 409 }
+        );
+      }
+
       data.content = rest.content as Prisma.InputJsonValue;
     }
     if (rest.status !== undefined) data.status = rest.status as PublishStatus;

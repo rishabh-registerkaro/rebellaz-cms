@@ -22,6 +22,17 @@ type SectionBase = {
   label: string;
   /** Heading rendered at the top of the section */
   heading: string;
+  /**
+   * Optional supporting image, uploaded to the Media Library.
+   *
+   * Rendered beside the section's copy on desktop and stacked above it on
+   * mobile. Omitted entirely when blank, so a text-only section keeps the full
+   * measure rather than leaving a gap.
+   */
+  image?: string;
+  /** Alt text. Empty means decorative, which is the right default for a photo
+   * that only repeats what the heading already says. */
+  alt?: string;
 };
 
 export type IntroSection = SectionBase & {
@@ -33,7 +44,7 @@ export type IntroSection = SectionBase & {
 export type CardsSection = SectionBase & {
   kind: "cards";
   intro?: string;
-  cards: { title: string; points: string[] }[];
+  cards: { title: string; points: string[]; image?: string; alt?: string }[];
 };
 
 export type ChipsSection = SectionBase & {
@@ -115,6 +126,15 @@ export type ServicePageContent = {
   titleLead: string;
   titleAccent: string;
   subtitle: string;
+  /**
+   * Optional hero image. With one, the hero becomes a two-column layout on
+   * desktop and stacks on mobile; without one it stays full-width text, which
+   * is why it is optional rather than a required field with a placeholder.
+   */
+  heroImage?: string;
+  heroAlt?: string;
+  /** Mono caption across the top of the hero visual. */
+  heroCaption?: string;
   sections: Section[];
 };
 

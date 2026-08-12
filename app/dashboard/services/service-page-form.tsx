@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { ImageField } from "@/components/common/ImageField";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -676,7 +677,19 @@ function cleanContent(content: ServicePageContent): ServicePageContent {
   return {
     ...content,
     breadcrumb: content.breadcrumb.filter((b) => b.label.trim()),
-    sections: content.sections.map((section) => {
+    heroImage: content.heroImage?.trim() || undefined,
+    heroAlt: content.heroAlt?.trim() || undefined,
+    heroCaption: content.heroCaption?.trim() || undefined,
+    sections: content.sections.map((rawSection) => {
+      // An emptied image field leaves "" behind. Normalising it to undefined
+      // keeps the stored document clean and means the renderer's `image &&`
+      // check is testing absence, not emptiness.
+      const section = {
+        ...rawSection,
+        image: rawSection.image?.trim() || undefined,
+        alt: rawSection.alt?.trim() || undefined,
+      } as typeof rawSection;
+
       const intro =
         "intro" in section ? { intro: section.intro?.trim() || undefined } : {};
       switch (section.kind) {
@@ -1130,6 +1143,37 @@ export default function ServicePageForm({
                 />
               </Field>
 
+              {/* Optional: with an image the hero becomes two columns on
+                  desktop and stacks on mobile; without one it stays
+                  full-width text. */}
+              <ImageField
+                label="Hero image (optional)"
+                optional
+                value={content.heroImage ?? ""}
+                onChange={(heroImage) => setContent({ heroImage })}
+                hint="Uploaded straight into the Media Library. Leave empty for a text-only hero."
+              />
+              {content.heroImage && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field label="Hero image alt text">
+                    <Input
+                      className={inputCls}
+                      value={content.heroAlt ?? ""}
+                      placeholder="What the image shows"
+                      onChange={(e) => setContent({ heroAlt: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Hero image caption">
+                    <Input
+                      className={inputCls}
+                      value={content.heroCaption ?? ""}
+                      placeholder="e.g. Signal → Decision"
+                      onChange={(e) => setContent({ heroCaption: e.target.value })}
+                    />
+                  </Field>
+                </div>
+              )}
+
             </div>
           </Collapsible.Content>
         </div>
@@ -1233,6 +1277,27 @@ export default function ServicePageForm({
                           }
                         />
                       </Field>
+                    </div>
+
+                    {/* Optional: sits beside the section's content on desktop
+                        and above it on mobile. Omitted entirely when blank. */}
+                    <div className="space-y-3">
+                      <ImageField
+                        label="Section image (optional)"
+                        optional
+                        value={section.image ?? ""}
+                        onChange={(image) => updateSection(i, { ...section, image })}
+                      />
+                      {section.image && (
+                        <Field label="Image alt text">
+                          <Input
+                            className={inputCls}
+                            value={section.alt ?? ""}
+                            placeholder="What the image shows — leave empty if decorative"
+                            onChange={(e) => updateSection(i, { ...section, alt: e.target.value })}
+                          />
+                        </Field>
+                      )}
                     </div>
                     <SectionBodyEditor section={section} onChange={(s) => updateSection(i, s)} />
                   </div>

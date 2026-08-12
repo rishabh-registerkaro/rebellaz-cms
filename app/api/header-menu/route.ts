@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/app/lib/utils/authorization";
 import { CONTENT_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags } from "@/app/lib/utils/revalidateFrontend";
+import { normalizeContactDetails, normalizeMainMenu } from "@/app/lib/utils/menuTree";
 
 const getCorsHeaders = (origin: string | null) => {
   const PRODUCTION_URL = process.env.PRODUCTION_URL || 'https://rebel-tau.vercel.app';
@@ -43,9 +44,17 @@ const getCorsHeaders = (origin: string | null) => {
 
 // API contract keeps the Mongo-era snake_case field name `main_menu`
 // (Prisma field is `mainMenu`).
+//
+// Normalized on the way out as well as in: the site builds its header from
+// this response, and documents saved before the write-side coercion existed
+// can still hold half-filled entries that would render as blank nav items.
 const serializeHeaderMenu = (menu: HeaderMenu) => {
   const { mainMenu, contactDetails, ...rest } = menu;
-  return withMongoId({ ...rest, main_menu: mainMenu, contact_details: contactDetails });
+  return withMongoId({
+    ...rest,
+    main_menu: normalizeMainMenu(mainMenu),
+    contact_details: normalizeContactDetails(contactDetails) ?? null,
+  });
 };
 
 // Handle OPTIONS request for CORS preflight
@@ -109,9 +118,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Coerced to the stored shape rather than trusted as posted — the site
+    // renders this document with nothing else in between. See menuTree.ts.
     const data = {
-      mainMenu: main_menu as Prisma.InputJsonValue,
-      contactDetails: (contact_details ?? undefined) as Prisma.InputJsonValue | undefined,
+      mainMenu: normalizeMainMenu(main_menu) as unknown as Prisma.InputJsonValue,
+      contactDetails: normalizeContactDetails(contact_details) as
+        | Prisma.InputJsonValue
+        | undefined,
     };
 
     // Check if header menu already exists (singleton)
@@ -172,9 +185,13 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    // Coerced to the stored shape rather than trusted as posted — the site
+    // renders this document with nothing else in between. See menuTree.ts.
     const data = {
-      mainMenu: main_menu as Prisma.InputJsonValue,
-      contactDetails: (contact_details ?? undefined) as Prisma.InputJsonValue | undefined,
+      mainMenu: normalizeMainMenu(main_menu) as unknown as Prisma.InputJsonValue,
+      contactDetails: normalizeContactDetails(contact_details) as
+        | Prisma.InputJsonValue
+        | undefined,
     };
 
     // Find and update header menu (singleton)

@@ -73,11 +73,12 @@ export default function ServicesPage() {
         const data = await res.json();
         // The ServicePage model also stores single pages that live elsewhere on
         // the site — /resume-builder is one, edited from its own screen. Only
-        // division pages are real services, so only those belong in this list;
-        // showing the others invites an editor to delete a page from a screen
-        // that has nothing to do with it.
-        const onlyServices = (data.servicePages || []).filter(
-          (s: { template?: string }) => (s.template ?? "division") === "division"
+        // Both templates are real service pages and belong on this screen.
+        // Other templates are excluded deliberately: showing them invites an
+        // editor to delete a page from a screen that has nothing to do with it.
+        const SERVICE_TEMPLATES = ["division", "solution"];
+        const onlyServices = (data.servicePages || []).filter((s: { template?: string }) =>
+          SERVICE_TEMPLATES.includes(s.template ?? "division")
         );
         setServices(onlyServices);
         if (data.pagination) setPagination(data.pagination);
