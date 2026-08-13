@@ -1,683 +1,990 @@
 "use client";
 
-// About Us page editor. Edits the single AboutPageContent document that the
-// Rebellabz frontend /about page renders — every section of the live design
-// (hero + quote form, metrics, pillars, accreditations, story timeline, team,
-// founder quote) maps to a card below.
-
-import { useEffect, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Plus, Trash2, ArrowUp, ArrowDown, RotateCcw } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { ImageField } from "@/components/common/ImageField";
 import {
-  Award,
-  BarChart3,
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  History,
-  Landmark,
-  Plus,
-  Quote,
-  RefreshCw,
-  Sparkles,
-  Trash2,
-  Users,
-} from "lucide-react";
-import * as Collapsible from "@radix-ui/react-collapsible";
-import {
-  ABOUT_ICON_NAMES,
-  ABOUT_META_DEFAULTS,
-  defaultAboutContent,
+  DEFAULT_ABOUT_CONTENT,
+  STAT_COUNT,
   type AboutPageContent,
 } from "@/app/lib/content/about-content";
 
-// ─── Shared styles (same idiom as the services editor) ───────────────────────
-
 const inputCls =
-  "w-full rounded-lg border border-slate-600 bg-slate-900/60 px-3 py-2 text-sm text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500";
-const textareaCls = `${inputCls} resize-y`;
-const selectCls =
-  "rounded-lg border border-slate-600 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-indigo-500";
-const cardWrapCls = "bg-slate-800/30 p-4 rounded-lg border border-slate-700";
-const labelCls = "text-sm font-medium text-slate-200";
-const addBtnCls =
-  "border-slate-600 bg-slate-800/60 text-slate-200 hover:bg-slate-700 hover:text-white";
+  "w-full border border-slate-600 bg-slate-800 text-slate-200 placeholder-slate-400";
+const labelCls = "block text-sm font-medium text-slate-200 mb-2";
+const cardCls = "bg-slate-800 border border-slate-700 shadow-sm p-6 space-y-5";
+const itemCls = "border border-slate-600 p-4 space-y-3 bg-slate-900";
+const noteCls = "text-xs text-slate-400";
 
-function Field({
+/** The ↑ ↓ ✕ cluster every repeatable row carries. */
+function RowControls({
+  index,
+  length,
+  onMove,
+  onRemove,
   label,
-  children,
 }: {
+  index: number;
+  length: number;
+  onMove: (i: number, d: -1 | 1) => void;
+  onRemove: (i: number) => void;
   label: string;
-  children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      <label className={labelCls}>{label}</label>
-      {children}
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Move ${label} ${index + 1} up`}
+        disabled={index === 0}
+        onClick={() => onMove(index, -1)}
+      >
+        <ArrowUp className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Move ${label} ${index + 1} down`}
+        disabled={index === length - 1}
+        onClick={() => onMove(index, 1)}
+      >
+        <ArrowDown className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Remove ${label} ${index + 1}`}
+        onClick={() => onRemove(index)}
+      >
+        <Trash2 className="h-4 w-4 text-red-400" />
+      </Button>
     </div>
   );
 }
 
-function IconSelect({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const known = (ABOUT_ICON_NAMES as readonly string[]).includes(value);
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={`${selectCls} w-full`}
-    >
-      {!known && value && <option value={value}>{value} (custom)</option>}
-      {ABOUT_ICON_NAMES.map((n) => (
-        <option key={n} value={n}>
-          {n}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function RemoveButton({ onClick }: { onClick: () => void }) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      onClick={onClick}
-      title="Remove"
-      className="text-red-400 hover:text-red-300 hover:bg-red-400/20 shrink-0"
-    >
-      <Trash2 className="h-4 w-4" />
-    </Button>
-  );
-}
-
-function AddButton({ onClick, label }: { onClick: () => void; label: string }) {
-  return (
-    <Button type="button" variant="outline" size="sm" onClick={onClick} className={addBtnCls}>
-      <Plus className="h-4 w-4 mr-1" /> {label}
-    </Button>
-  );
-}
-
-function StringListEditor({
-  items,
-  onChange,
-  placeholder,
-  addLabel,
-}: {
-  items: string[];
-  onChange: (items: string[]) => void;
-  placeholder?: string;
-  addLabel: string;
-}) {
-  return (
-    <div className="space-y-2">
-      {items.map((item, i) => (
-        <div key={i} className="flex items-start gap-2">
-          <Input
-            className={inputCls}
-            value={item}
-            placeholder={placeholder}
-            onChange={(e) =>
-              onChange(items.map((it, idx) => (idx === i ? e.target.value : it)))
-            }
-          />
-          <RemoveButton onClick={() => onChange(items.filter((_, idx) => idx !== i))} />
-        </div>
-      ))}
-      <AddButton onClick={() => onChange([...items, ""])} label={addLabel} />
-    </div>
-  );
-}
-
-function SectionCard({
-  icon: Icon,
-  title,
-  hint,
-  open,
-  onToggle,
-  children,
-}: {
-  icon: React.ElementType;
-  title: string;
-  hint?: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Collapsible.Root open={open} onOpenChange={onToggle}>
-      <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl overflow-hidden">
-        <Collapsible.Trigger asChild>
-          <button className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
-            <div className="flex items-center gap-3 text-left">
-              <Icon className="h-5 w-5 text-indigo-400 shrink-0" />
-              <div>
-                <span className="text-lg font-semibold text-white">{title}</span>
-                {hint && <p className="text-xs text-slate-400">{hint}</p>}
-              </div>
-            </div>
-            {open ? (
-              <ChevronDown className="h-5 w-5 text-slate-400" />
-            ) : (
-              <ChevronRight className="h-5 w-5 text-slate-400" />
-            )}
-          </button>
-        </Collapsible.Trigger>
-        <Collapsible.Content>
-          <div className="p-6 pt-2 space-y-4 border-t border-white/10">{children}</div>
-        </Collapsible.Content>
-      </div>
-    </Collapsible.Root>
-  );
-}
-
-// Merge a stored document with the defaults so missing keys never crash the form
-function normalizeAbout(raw: unknown): AboutPageContent {
-  const d = defaultAboutContent();
-  if (!raw || typeof raw !== "object") return d;
-  const c = raw as Partial<AboutPageContent>;
-  return {
-    hero: { ...d.hero, ...(c.hero || {}), form: { ...d.hero.form, ...(c.hero?.form || {}) } },
-    metrics: Array.isArray(c.metrics) ? c.metrics : d.metrics,
-    pillars: { ...d.pillars, ...(c.pillars || {}) },
-    accreditations: { ...d.accreditations, ...(c.accreditations || {}) },
-    story: { ...d.story, ...(c.story || {}) },
-    team: { ...d.team, ...(c.team || {}) },
-    founder: { ...d.founder, ...(c.founder || {}) },
-  };
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function AboutDashboardPage() {
-  const [metaTitle, setMetaTitle] = useState(ABOUT_META_DEFAULTS.metaTitle);
-  const [metaDescription, setMetaDescription] = useState(ABOUT_META_DEFAULTS.metaDescription);
-  const [content, setInternalContent] = useState<AboutPageContent>(defaultAboutContent());
+export default function AboutContentPage() {
+  const [content, setContent] = useState<AboutPageContent>(DEFAULT_ABOUT_CONTENT);
+  const [metaTitle, setMetaTitle] = useState("");
+  const [metaDescription, setMetaDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [open, setOpen] = useState<Record<string, boolean>>({ seo: true, hero: true });
 
-  const toggle = (k: string) => setOpen((p) => ({ ...p, [k]: !p[k] }));
-  const set = <K extends keyof AboutPageContent>(key: K, value: AboutPageContent[K]) =>
-    setInternalContent((p) => ({ ...p, [key]: value }));
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/about", { credentials: "include" });
-        const data = await res.json();
-        if (data.success && data.aboutPage) {
-          setMetaTitle(data.aboutPage.metaTitle ?? ABOUT_META_DEFAULTS.metaTitle);
-          setMetaDescription(
-            data.aboutPage.metaDescription ?? ABOUT_META_DEFAULTS.metaDescription
-          );
-          setInternalContent(normalizeAbout(data.aboutPage.content));
-        }
-      } catch {
-        toast.error("Failed to load the about page", { closeButton: true });
-      } finally {
-        setLoading(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/about", { credentials: "include" });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message ?? "Failed to load");
+      if (json.aboutPage) {
+        setContent(json.aboutPage.content);
+        setMetaTitle(json.aboutPage.metaTitle ?? "");
+        setMetaDescription(json.aboutPage.metaDescription ?? "");
       }
-    })();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load content", {
+        closeButton: true,
+      });
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleRevalidate = async () => {
-    const toastId = toast.loading("Revalidating cache...");
-    try {
-      const res = await fetch("/api/revalidate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags: ["about-page"] }),
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success("Cache cleared — frontend will fetch fresh content", { id: toastId });
-      } else {
-        toast.error(data.message || "Revalidation failed", { id: toastId });
-      }
-    } catch {
-      toast.error("Revalidation failed", { id: toastId });
-    }
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  /**
+   * Merge a patch into one section.
+   *
+   * Constrained to the object-valued keys: `stats` is an array, and spreading
+   * it here would turn it into an object keyed by index.
+   */
+  type SectionKey = {
+    [K in keyof AboutPageContent]: AboutPageContent[K] extends unknown[] ? never : K;
+  }[keyof AboutPageContent];
+
+  const setSection = <K extends SectionKey>(
+    key: K,
+    value: Partial<AboutPageContent[K]>
+  ) => setContent((c) => ({ ...c, [key]: { ...c[key], ...value } }));
+
+  /** Replace one entry of a list without disturbing the others. */
+  const setAt = <T,>(list: T[], index: number, patch: Partial<T>): T[] =>
+    list.map((x, i) => (i === index ? { ...x, ...patch } : x));
+
+  const move = <T,>(list: T[], i: number, delta: -1 | 1): T[] => {
+    const j = i + delta;
+    if (j < 0 || j >= list.length) return list;
+    const next = [...list];
+    [next[i], next[j]] = [next[j], next[i]];
+    return next;
   };
 
-  const handleSave = async () => {
+  const save = async () => {
     setSaving(true);
-    const toastId = toast.loading("Saving...", { closeButton: true });
+    const toastId = toast.loading("Saving About page...");
     try {
       const res = await fetch("/api/about", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ metaTitle, metaDescription, content }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, metaTitle, metaDescription }),
       });
-      const data = await res.json();
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message ?? "Save failed");
       toast.dismiss(toastId);
-      if (res.ok && data.success) {
-        toast.success("About page saved — live site updated", { closeButton: true });
-      } else {
-        toast.error(data.message || "Failed to save", { closeButton: true });
-      }
-    } catch {
+      toast.success("About page saved", { closeButton: true });
+    } catch (error) {
       toast.dismiss(toastId);
-      toast.error("Failed to save", { closeButton: true });
+      toast.error(error instanceof Error ? error.message : "Something went wrong", {
+        closeButton: true,
+      });
     } finally {
       setSaving(false);
     }
   };
 
+  const resetCopy = () => {
+    setContent(DEFAULT_ABOUT_CONTENT);
+    toast.message("Default copy loaded — press Save to keep it", { closeButton: true });
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-950 to-slate-900 p-6 flex items-center justify-center">
-        <p className="text-slate-300">Loading...</p>
+      <div className="min-h-screen w-full bg-slate-900 p-6">
+        <p className="text-slate-400">Loading About page content…</p>
       </div>
     );
   }
 
-  const { hero, metrics, pillars, accreditations, story, team, founder } = content;
+  const { hero, story, values, stats, team, standards, partners, faq, dualCta } = content;
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-900 via-slate-950 to-slate-900 p-6">
-      <div className="max-w-5xl mx-auto space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-2">
+    <div className="min-h-screen w-full bg-slate-900 p-6">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">About Us Page</h1>
+            <h1 className="mb-1 text-3xl font-bold text-slate-100">About Page Content</h1>
             <p className="text-slate-400">
-              Every section of the live /about page — save to publish instantly.
+              Every section of /about. Sections alternate dark and light automatically — nothing to
+              configure.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleRevalidate}
-              title="Clear frontend cache for the About page"
-              className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Revalidate Cache
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="secondary" onClick={resetCopy} disabled={saving}>
+              <RotateCcw className="mr-2 h-4 w-4" /> Reset copy
             </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-indigo-500 hover:bg-indigo-600 text-white px-6"
-            >
-              {saving ? "Saving..." : "Save Page"}
+            <Button type="button" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
         </div>
 
-        {/* ── SEO ── */}
-        <SectionCard icon={FileText} title="SEO / Meta" open={!!open.seo} onToggle={() => toggle("seo")}>
-          <Field label="Meta Title">
-            <Input className={inputCls} value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} />
-          </Field>
-          <Field label="Meta Description">
-            <textarea rows={3} className={textareaCls} value={metaDescription} onChange={(e) => setMetaDescription(e.target.value)} />
-          </Field>
-        </SectionCard>
+        {/* 1. Hero -------------------------------------------------------- */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">1. Hero</h2>
+          <p className={noteCls}>
+            The left column only. The orbit animation beside it is part of the site — it has no
+            authored copy.
+          </p>
 
-        {/* ── Hero ── */}
-        <SectionCard
-          icon={Sparkles}
-          title="Hero & Quote Form"
-          hint="Purple gradient banner: badge, title, CTAs, chips and the lead-capture card"
-          open={!!open.hero}
-          onToggle={() => toggle("hero")}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Badge">
-              <Input className={inputCls} value={hero.badge} onChange={(e) => set("hero", { ...hero, badge: e.target.value })} />
-            </Field>
-            <div />
-            <Field label="Title lead">
-              <Input className={inputCls} value={hero.titleLead} onChange={(e) => set("hero", { ...hero, titleLead: e.target.value })} />
-            </Field>
-            <Field label="Title accent (gold gradient)">
-              <Input className={inputCls} value={hero.titleAccent} onChange={(e) => set("hero", { ...hero, titleAccent: e.target.value })} />
-            </Field>
+          <div>
+            <label className={labelCls}>Kicker</label>
+            <Input
+              className={inputCls}
+              value={hero.badge}
+              onChange={(e) => setSection("hero", { badge: e.target.value })}
+              placeholder="Founded 2025 · Year Two"
+            />
           </div>
-          <Field label="Subtitle">
-            <textarea rows={4} className={textareaCls} value={hero.subtitle} onChange={(e) => set("hero", { ...hero, subtitle: e.target.value })} />
-          </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Primary CTA text">
-              <Input className={inputCls} value={hero.ctaPrimary.text} onChange={(e) => set("hero", { ...hero, ctaPrimary: { ...hero.ctaPrimary, text: e.target.value } })} />
-            </Field>
-            <Field label="Primary CTA link">
-              <Input className={inputCls} value={hero.ctaPrimary.url} onChange={(e) => set("hero", { ...hero, ctaPrimary: { ...hero.ctaPrimary, url: e.target.value } })} />
-            </Field>
-            <Field label="Secondary CTA text">
-              <Input className={inputCls} value={hero.ctaSecondary.text} onChange={(e) => set("hero", { ...hero, ctaSecondary: { ...hero.ctaSecondary, text: e.target.value } })} />
-            </Field>
-            <Field label="Secondary CTA link">
-              <Input className={inputCls} value={hero.ctaSecondary.url} onChange={(e) => set("hero", { ...hero, ctaSecondary: { ...hero.ctaSecondary, url: e.target.value } })} />
-            </Field>
+          <div>
+            <label className={labelCls}>Heading</label>
+            <Input
+              className={inputCls}
+              value={hero.title}
+              onChange={(e) => setSection("hero", { title: e.target.value })}
+            />
+            <p className={`${noteCls} mt-1`}>The red full stop is added by the site.</p>
           </div>
-          <Field label="Trust chips">
-            <div className="space-y-2">
-              {hero.chips.map((chip, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <div className="grid grid-cols-2 gap-2 flex-1">
-                    <IconSelect
-                      value={chip.icon}
-                      onChange={(icon) =>
-                        set("hero", { ...hero, chips: hero.chips.map((c, idx) => (idx === i ? { ...c, icon } : c)) })
-                      }
-                    />
-                    <Input
-                      className={inputCls}
-                      value={chip.label}
-                      placeholder="e.g. 4.9 / 5 rated"
-                      onChange={(e) =>
-                        set("hero", { ...hero, chips: hero.chips.map((c, idx) => (idx === i ? { ...c, label: e.target.value } : c)) })
-                      }
-                    />
-                  </div>
-                  <RemoveButton onClick={() => set("hero", { ...hero, chips: hero.chips.filter((_, idx) => idx !== i) })} />
-                </div>
-              ))}
-              <AddButton onClick={() => set("hero", { ...hero, chips: [...hero.chips, { icon: "Star", label: "" }] })} label="Add chip" />
-            </div>
-          </Field>
-          <div className={`${cardWrapCls} space-y-4`}>
-            <span className="text-sm font-semibold text-slate-300">Quote form card</span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Kicker">
-                <Input className={inputCls} value={hero.form.kicker} onChange={(e) => set("hero", { ...hero, form: { ...hero.form, kicker: e.target.value } })} />
-              </Field>
-              <Field label="Title">
-                <Input className={inputCls} value={hero.form.title} onChange={(e) => set("hero", { ...hero, form: { ...hero.form, title: e.target.value } })} />
-              </Field>
-            </div>
-            <Field label="Service options (dropdown)">
-              <StringListEditor
-                items={hero.form.services}
-                onChange={(services) => set("hero", { ...hero, form: { ...hero.form, services } })}
-                placeholder="e.g. MEA Apostille"
-                addLabel="Add service option"
+          <div>
+            <label className={labelCls}>Intro paragraph</label>
+            <Textarea
+              className={inputCls}
+              rows={3}
+              value={hero.lede}
+              onChange={(e) => setSection("hero", { lede: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div className={itemCls}>
+              <h3 className="text-sm font-semibold text-slate-100">Primary button</h3>
+              <Input
+                className={inputCls}
+                value={hero.primaryCta.label}
+                onChange={(e) =>
+                  setSection("hero", { primaryCta: { ...hero.primaryCta, label: e.target.value } })
+                }
               />
-            </Field>
-            <Field label="Trust note (under the button)">
-              <Input className={inputCls} value={hero.form.note} onChange={(e) => set("hero", { ...hero, form: { ...hero.form, note: e.target.value } })} />
-            </Field>
+              <Input
+                className={inputCls}
+                value={hero.primaryCta.href}
+                onChange={(e) =>
+                  setSection("hero", { primaryCta: { ...hero.primaryCta, href: e.target.value } })
+                }
+                placeholder="#story"
+              />
+            </div>
+            <div className={itemCls}>
+              <h3 className="text-sm font-semibold text-slate-100">Secondary button</h3>
+              <Input
+                className={inputCls}
+                value={hero.secondaryCta.label}
+                onChange={(e) =>
+                  setSection("hero", {
+                    secondaryCta: { ...hero.secondaryCta, label: e.target.value },
+                  })
+                }
+              />
+              <Input
+                className={inputCls}
+                value={hero.secondaryCta.href}
+                onChange={(e) =>
+                  setSection("hero", {
+                    secondaryCta: { ...hero.secondaryCta, href: e.target.value },
+                  })
+                }
+                placeholder="#cta"
+              />
+            </div>
           </div>
-        </SectionCard>
+        </div>
 
-        {/* ── Metrics ── */}
-        <SectionCard
-          icon={BarChart3}
-          title="Trust Metrics"
-          hint='The stats strip under the hero ("15+ Years", "120+ Countries"…)'
-          open={!!open.metrics}
-          onToggle={() => toggle("metrics")}
-        >
-          <div className="space-y-2">
-            {metrics.map((m, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <div className="grid grid-cols-4 gap-2 flex-1">
-                  <Input className={inputCls} value={m.value} placeholder="Value (15)" onChange={(e) => set("metrics", metrics.map((x, idx) => (idx === i ? { ...x, value: e.target.value } : x)))} />
-                  <Input className={inputCls} value={m.suffix} placeholder="Suffix (+)" onChange={(e) => set("metrics", metrics.map((x, idx) => (idx === i ? { ...x, suffix: e.target.value } : x)))} />
-                  <Input className={inputCls} value={m.label} placeholder="Label (Years)" onChange={(e) => set("metrics", metrics.map((x, idx) => (idx === i ? { ...x, label: e.target.value } : x)))} />
-                  <Input className={inputCls} value={m.sub} placeholder="Subtext" onChange={(e) => set("metrics", metrics.map((x, idx) => (idx === i ? { ...x, sub: e.target.value } : x)))} />
-                </div>
-                <RemoveButton onClick={() => set("metrics", metrics.filter((_, idx) => idx !== i))} />
-              </div>
-            ))}
-            <AddButton onClick={() => set("metrics", [...metrics, { value: "", suffix: "+", label: "", sub: "" }])} label="Add metric" />
+        {/* 2. Where we are ------------------------------------------------ */}
+        <div className={cardCls}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">2. Where we are</h2>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setSection("story", {
+                  cards: [...story.cards, { stage: "", title: "", body: "" }],
+                })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add card
+            </Button>
           </div>
-        </SectionCard>
 
-        {/* ── Pillars ── */}
-        <SectionCard
-          icon={Landmark}
-          title="Operating Pillars"
-          hint='"The chain of trust" — three cards with icon, title and bullet points'
-          open={!!open.pillars}
-          onToggle={() => toggle("pillars")}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Kicker">
-              <Input className={inputCls} value={pillars.kicker} onChange={(e) => set("pillars", { ...pillars, kicker: e.target.value })} />
-            </Field>
-            <Field label="Heading">
-              <Input className={inputCls} value={pillars.heading} onChange={(e) => set("pillars", { ...pillars, heading: e.target.value })} />
-            </Field>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={story.eyebrow}
+                onChange={(e) => setSection("story", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={story.heading}
+                onChange={(e) => setSection("story", { heading: e.target.value })}
+              />
+            </div>
           </div>
-          <Field label="Intro">
-            <textarea rows={2} className={textareaCls} value={pillars.intro} onChange={(e) => set("pillars", { ...pillars, intro: e.target.value })} />
-          </Field>
-          {pillars.items.map((item, i) => (
-            <div key={i} className={`${cardWrapCls} space-y-3`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-300">Pillar {i + 1}</span>
-                <RemoveButton onClick={() => set("pillars", { ...pillars, items: pillars.items.filter((_, idx) => idx !== i) })} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Icon">
-                  <IconSelect value={item.icon} onChange={(icon) => set("pillars", { ...pillars, items: pillars.items.map((x, idx) => (idx === i ? { ...x, icon } : x)) })} />
-                </Field>
-                <Field label="Title">
-                  <Input className={inputCls} value={item.title} onChange={(e) => set("pillars", { ...pillars, items: pillars.items.map((x, idx) => (idx === i ? { ...x, title: e.target.value } : x)) })} />
-                </Field>
-              </div>
-              <Field label="Points">
-                <StringListEditor
-                  items={item.points}
-                  onChange={(points) => set("pillars", { ...pillars, items: pillars.items.map((x, idx) => (idx === i ? { ...x, points } : x)) })}
-                  placeholder="Bullet point"
-                  addLabel="Add point"
+          <div>
+            <label className={labelCls}>Intro paragraph</label>
+            <Textarea
+              className={inputCls}
+              rows={2}
+              value={story.lede}
+              onChange={(e) => setSection("story", { lede: e.target.value })}
+            />
+          </div>
+
+          {story.cards.map((card, i) => (
+            <div key={i} className={itemCls}>
+              <div className="flex items-start gap-3">
+                <Input
+                  className={inputCls}
+                  value={card.stage}
+                  onChange={(e) =>
+                    setSection("story", { cards: setAt(story.cards, i, { stage: e.target.value }) })
+                  }
+                  placeholder="Already running"
                 />
-              </Field>
+                <RowControls
+                  index={i}
+                  length={story.cards.length}
+                  onMove={(idx, d) => setSection("story", { cards: move(story.cards, idx, d) })}
+                  onRemove={(idx) =>
+                    setSection("story", { cards: story.cards.filter((_, x) => x !== idx) })
+                  }
+                  label="card"
+                />
+              </div>
+              <Input
+                className={inputCls}
+                value={card.title}
+                onChange={(e) =>
+                  setSection("story", { cards: setAt(story.cards, i, { title: e.target.value }) })
+                }
+                placeholder="The memory core"
+              />
+              <Textarea
+                className={inputCls}
+                rows={2}
+                value={card.body}
+                onChange={(e) =>
+                  setSection("story", { cards: setAt(story.cards, i, { body: e.target.value }) })
+                }
+              />
             </div>
           ))}
-          <AddButton onClick={() => set("pillars", { ...pillars, items: [...pillars.items, { icon: "Scale", title: "", points: [""] }] })} label="Add pillar" />
-        </SectionCard>
+        </div>
 
-        {/* ── Accreditations ── */}
-        <SectionCard
-          icon={Award}
-          title="Accreditations"
-          hint='"Recognized standards & frameworks" — badge cards'
-          open={!!open.accred}
-          onToggle={() => toggle("accred")}
-        >
-          <Field label="Heading">
-            <Input className={inputCls} value={accreditations.heading} onChange={(e) => set("accreditations", { ...accreditations, heading: e.target.value })} />
-          </Field>
-          <Field label="Intro">
-            <textarea rows={2} className={textareaCls} value={accreditations.intro} onChange={(e) => set("accreditations", { ...accreditations, intro: e.target.value })} />
-          </Field>
-          <div className="space-y-2">
-            {accreditations.items.map((a, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <div className="grid grid-cols-3 gap-2 flex-1">
-                  <IconSelect value={a.icon} onChange={(icon) => set("accreditations", { ...accreditations, items: accreditations.items.map((x, idx) => (idx === i ? { ...x, icon } : x)) })} />
-                  <Input className={inputCls} value={a.title} placeholder="Title (ISO 27001)" onChange={(e) => set("accreditations", { ...accreditations, items: accreditations.items.map((x, idx) => (idx === i ? { ...x, title: e.target.value } : x)) })} />
-                  <Input className={inputCls} value={a.sub} placeholder="Subtext" onChange={(e) => set("accreditations", { ...accreditations, items: accreditations.items.map((x, idx) => (idx === i ? { ...x, sub: e.target.value } : x)) })} />
-                </div>
-                <RemoveButton onClick={() => set("accreditations", { ...accreditations, items: accreditations.items.filter((_, idx) => idx !== i) })} />
-              </div>
-            ))}
-            <AddButton onClick={() => set("accreditations", { ...accreditations, items: [...accreditations.items, { icon: "ShieldCheck", title: "", sub: "" }] })} label="Add accreditation" />
+        {/* 3. What drives us ---------------------------------------------- */}
+        <div className={cardCls}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">3. What drives us</h2>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setSection("values", {
+                  items: [...values.items, { code: "", title: "", desc: "", metric: "" }],
+                })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add commitment
+            </Button>
           </div>
-        </SectionCard>
+          <p className={noteCls}>The 01 // 02 numbering is added by the site.</p>
 
-        {/* ── Story ── */}
-        <SectionCard
-          icon={History}
-          title="Our Story & Timeline"
-          hint="Photo badge + the year-by-year journey"
-          open={!!open.story}
-          onToggle={() => toggle("story")}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Kicker">
-              <Input className={inputCls} value={story.kicker} onChange={(e) => set("story", { ...story, kicker: e.target.value })} />
-            </Field>
-            <div />
-            <Field label="Heading lead">
-              <Input className={inputCls} value={story.headingLead} onChange={(e) => set("story", { ...story, headingLead: e.target.value })} />
-            </Field>
-            <Field label="Heading accent (italic purple)">
-              <Input className={inputCls} value={story.headingAccent} onChange={(e) => set("story", { ...story, headingAccent: e.target.value })} />
-            </Field>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={values.eyebrow}
+                onChange={(e) => setSection("values", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={values.heading}
+                onChange={(e) => setSection("values", { heading: e.target.value })}
+              />
+            </div>
           </div>
-          <Field label="Intro">
-            <textarea rows={3} className={textareaCls} value={story.intro} onChange={(e) => set("story", { ...story, intro: e.target.value })} />
-          </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Photo badge title">
-              <Input className={inputCls} value={story.badgeTitle} placeholder="Est. 2009" onChange={(e) => set("story", { ...story, badgeTitle: e.target.value })} />
-            </Field>
-            <Field label="Photo badge subtext">
-              <Input className={inputCls} value={story.badgeSub} placeholder="New Delhi, India" onChange={(e) => set("story", { ...story, badgeSub: e.target.value })} />
-            </Field>
-          </div>
-          {story.timeline.map((t, i) => (
-            <div key={i} className={`${cardWrapCls} space-y-3`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-300">Milestone {i + 1}</span>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!!t.dark}
-                      onChange={(e) => set("story", { ...story, timeline: story.timeline.map((x, idx) => (idx === i ? { ...x, dark: e.target.checked } : x)) })}
-                      className="accent-indigo-500"
-                    />
-                    Dark style (latest milestone)
-                  </label>
-                  <RemoveButton onClick={() => set("story", { ...story, timeline: story.timeline.filter((_, idx) => idx !== i) })} />
-                </div>
+
+          {values.items.map((item, i) => (
+            <div key={i} className={itemCls}>
+              <div className="flex items-start gap-3">
+                <Input
+                  className={inputCls}
+                  value={item.code}
+                  onChange={(e) =>
+                    setSection("values", { items: setAt(values.items, i, { code: e.target.value }) })
+                  }
+                  placeholder="Transparency"
+                />
+                <RowControls
+                  index={i}
+                  length={values.items.length}
+                  onMove={(idx, d) => setSection("values", { items: move(values.items, idx, d) })}
+                  onRemove={(idx) =>
+                    setSection("values", { items: values.items.filter((_, x) => x !== idx) })
+                  }
+                  label="commitment"
+                />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Field label="Year">
-                  <Input className={inputCls} value={t.year} onChange={(e) => set("story", { ...story, timeline: story.timeline.map((x, idx) => (idx === i ? { ...x, year: e.target.value } : x)) })} />
-                </Field>
-                <div className="sm:col-span-2">
-                  <Field label="Title">
-                    <Input className={inputCls} value={t.title} onChange={(e) => set("story", { ...story, timeline: story.timeline.map((x, idx) => (idx === i ? { ...x, title: e.target.value } : x)) })} />
-                  </Field>
-                </div>
-              </div>
-              <Field label="Description">
-                <textarea rows={2} className={textareaCls} value={t.desc} onChange={(e) => set("story", { ...story, timeline: story.timeline.map((x, idx) => (idx === i ? { ...x, desc: e.target.value } : x)) })} />
-              </Field>
+              <Input
+                className={inputCls}
+                value={item.title}
+                onChange={(e) =>
+                  setSection("values", { items: setAt(values.items, i, { title: e.target.value }) })
+                }
+                placeholder="Radical Transparency"
+              />
+              <Textarea
+                className={inputCls}
+                rows={2}
+                value={item.desc}
+                onChange={(e) =>
+                  setSection("values", { items: setAt(values.items, i, { desc: e.target.value }) })
+                }
+              />
+              <Input
+                className={inputCls}
+                value={item.metric}
+                onChange={(e) =>
+                  setSection("values", { items: setAt(values.items, i, { metric: e.target.value }) })
+                }
+                placeholder="100% auditable decisions"
+              />
             </div>
           ))}
-          <AddButton onClick={() => set("story", { ...story, timeline: [...story.timeline, { year: "", title: "", desc: "" }] })} label="Add milestone" />
-        </SectionCard>
+        </div>
 
-        {/* ── Team ── */}
-        <SectionCard
-          icon={Users}
-          title="Team"
-          hint='"The people behind the seal" — member cards'
-          open={!!open.team}
-          onToggle={() => toggle("team")}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Kicker">
-              <Input className={inputCls} value={team.kicker} onChange={(e) => set("team", { ...team, kicker: e.target.value })} />
-            </Field>
-            <div />
-            <Field label="Heading lead">
-              <Input className={inputCls} value={team.headingLead} onChange={(e) => set("team", { ...team, headingLead: e.target.value })} />
-            </Field>
-            <Field label="Heading accent (italic purple)">
-              <Input className={inputCls} value={team.headingAccent} onChange={(e) => set("team", { ...team, headingAccent: e.target.value })} />
-            </Field>
-          </div>
-          <Field label="Intro">
-            <textarea rows={2} className={textareaCls} value={team.intro} onChange={(e) => set("team", { ...team, intro: e.target.value })} />
-          </Field>
-          {team.members.map((m, i) => (
-            <div key={i} className={`${cardWrapCls} space-y-3`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-300">Member {i + 1}</span>
-                <RemoveButton onClick={() => set("team", { ...team, members: team.members.filter((_, idx) => idx !== i) })} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Name">
-                  <Input className={inputCls} value={m.name} onChange={(e) => set("team", { ...team, members: team.members.map((x, idx) => (idx === i ? { ...x, name: e.target.value } : x)) })} />
-                </Field>
-                <Field label="Role">
-                  <Input className={inputCls} value={m.role} onChange={(e) => set("team", { ...team, members: team.members.map((x, idx) => (idx === i ? { ...x, role: e.target.value } : x)) })} />
-                </Field>
-              </div>
-              <Field label="Description">
-                <textarea rows={2} className={textareaCls} value={m.desc} onChange={(e) => set("team", { ...team, members: team.members.map((x, idx) => (idx === i ? { ...x, desc: e.target.value } : x)) })} />
-              </Field>
-              <Field label="Photo URL">
-                <Input className={inputCls} value={m.photo} placeholder="/assets/about-team-1.jpg or a Media Library URL" onChange={(e) => set("team", { ...team, members: team.members.map((x, idx) => (idx === i ? { ...x, photo: e.target.value } : x)) })} />
-              </Field>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Field label="Email (optional)">
-                  <Input className={inputCls} value={m.email ?? ""} placeholder="meera@rebel-labz.com" onChange={(e) => set("team", { ...team, members: team.members.map((x, idx) => (idx === i ? { ...x, email: e.target.value } : x)) })} />
-                </Field>
-                <Field label="LinkedIn URL (optional)">
-                  <Input className={inputCls} value={m.linkedin ?? ""} placeholder="https://linkedin.com/in/…" onChange={(e) => set("team", { ...team, members: team.members.map((x, idx) => (idx === i ? { ...x, linkedin: e.target.value } : x)) })} />
-                </Field>
-                <Field label="Instagram URL (optional)">
-                  <Input className={inputCls} value={m.instagram ?? ""} placeholder="https://instagram.com/…" onChange={(e) => set("team", { ...team, members: team.members.map((x, idx) => (idx === i ? { ...x, instagram: e.target.value } : x)) })} />
-                </Field>
-              </div>
-              <p className="text-xs text-slate-500">
-                The icons on the website only appear for links you fill in — leave a field empty to hide its icon.
-              </p>
+        {/* 4. Stats band --------------------------------------------------- */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">4. Stats band</h2>
+          <p className={noteCls}>
+            Exactly {STAT_COUNT} — the red band is a fixed four-column layout.
+          </p>
+          {stats.map((stat, i) => (
+            <div key={i} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Input
+                className={inputCls}
+                value={stat.value}
+                onChange={(e) =>
+                  setContent((c) => ({ ...c, stats: setAt(c.stats, i, { value: e.target.value }) }))
+                }
+                placeholder="6"
+              />
+              <Input
+                className={inputCls}
+                value={stat.label}
+                onChange={(e) =>
+                  setContent((c) => ({ ...c, stats: setAt(c.stats, i, { label: e.target.value }) }))
+                }
+                placeholder="Design partners"
+              />
             </div>
           ))}
-          <AddButton onClick={() => set("team", { ...team, members: [...team.members, { name: "", role: "", desc: "", photo: "" }] })} label="Add member" />
-        </SectionCard>
+        </div>
 
-        {/* ── Founder ── */}
-        <SectionCard
-          icon={Quote}
-          title="Founder Quote"
-          hint='"A word from our founder" — leadership card + the big quote'
-          open={!!open.founder}
-          onToggle={() => toggle("founder")}
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Kicker">
-              <Input className={inputCls} value={founder.kicker} onChange={(e) => set("founder", { ...founder, kicker: e.target.value })} />
-            </Field>
-            <Field label="Heading">
-              <Input className={inputCls} value={founder.heading} onChange={(e) => set("founder", { ...founder, heading: e.target.value })} />
-            </Field>
-            <Field label="Founder name">
-              <Input className={inputCls} value={founder.name} onChange={(e) => set("founder", { ...founder, name: e.target.value })} />
-            </Field>
-            <Field label="Founder role">
-              <Input className={inputCls} value={founder.role} onChange={(e) => set("founder", { ...founder, role: e.target.value })} />
-            </Field>
+        {/* 5. Founding team ------------------------------------------------ */}
+        <div className={cardCls}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">5. Founding team</h2>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setSection("team", {
+                  members: [...team.members, { name: "", role: "", bio: "" }],
+                })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add member
+            </Button>
           </div>
-          <Field label="Experience line">
-            <Input className={inputCls} value={founder.experience} onChange={(e) => set("founder", { ...founder, experience: e.target.value })} />
-          </Field>
-          <Field label="Quote">
-            <textarea rows={3} className={textareaCls} value={founder.quote} onChange={(e) => set("founder", { ...founder, quote: e.target.value })} />
-          </Field>
-          <Field label="Signature">
-            <Input className={inputCls} value={founder.signature} onChange={(e) => set("founder", { ...founder, signature: e.target.value })} />
-          </Field>
-        </SectionCard>
+          <p className={noteCls}>
+            A member without a photo shows an initials monogram, which is what the site does today.
+          </p>
 
-        <div className="flex justify-end pb-10">
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-indigo-500 hover:bg-indigo-600 text-white px-8"
-          >
-            {saving ? "Saving..." : "Save Page"}
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={team.eyebrow}
+                onChange={(e) => setSection("team", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={team.heading}
+                onChange={(e) => setSection("team", { heading: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {team.members.map((member, i) => (
+            <div key={i} className={itemCls}>
+              <div className="flex items-start gap-3">
+                <Input
+                  className={inputCls}
+                  value={member.name}
+                  onChange={(e) =>
+                    setSection("team", {
+                      members: setAt(team.members, i, { name: e.target.value }),
+                    })
+                  }
+                  placeholder="Sana Rahal"
+                />
+                <RowControls
+                  index={i}
+                  length={team.members.length}
+                  onMove={(idx, d) => setSection("team", { members: move(team.members, idx, d) })}
+                  onRemove={(idx) =>
+                    setSection("team", { members: team.members.filter((_, x) => x !== idx) })
+                  }
+                  label="member"
+                />
+              </div>
+              <Input
+                className={inputCls}
+                value={member.role}
+                onChange={(e) =>
+                  setSection("team", { members: setAt(team.members, i, { role: e.target.value }) })
+                }
+                placeholder="Founder / Research"
+              />
+              <Textarea
+                className={inputCls}
+                rows={2}
+                value={member.bio}
+                onChange={(e) =>
+                  setSection("team", { members: setAt(team.members, i, { bio: e.target.value }) })
+                }
+              />
+              <ImageField
+                label="Portrait (optional)"
+                optional
+                value={member.image ?? ""}
+                onChange={(image) =>
+                  setSection("team", { members: setAt(team.members, i, { image }) })
+                }
+                hint="Uploaded straight into the Media Library."
+              />
+              {member.image && (
+                <Input
+                  className={inputCls}
+                  value={member.alt ?? ""}
+                  onChange={(e) =>
+                    setSection("team", { members: setAt(team.members, i, { alt: e.target.value }) })
+                  }
+                  placeholder="Photo alt text"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* 6. Operational standards ---------------------------------------- */}
+        <div className={cardCls}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">6. Operational standards</h2>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setSection("standards", {
+                  items: [...standards.items, { code: "", title: "", desc: "" }],
+                })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add standard
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={standards.eyebrow}
+                onChange={(e) => setSection("standards", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={standards.heading}
+                onChange={(e) => setSection("standards", { heading: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Intro paragraph</label>
+            <Textarea
+              className={inputCls}
+              rows={2}
+              value={standards.body}
+              onChange={(e) => setSection("standards", { body: e.target.value })}
+            />
+          </div>
+
+          {standards.items.map((item, i) => (
+            <div key={i} className={itemCls}>
+              <div className="flex items-start gap-3">
+                <Input
+                  className={inputCls}
+                  value={item.code}
+                  onChange={(e) =>
+                    setSection("standards", {
+                      items: setAt(standards.items, i, { code: e.target.value }),
+                    })
+                  }
+                  placeholder="DATA_SOV"
+                />
+                <RowControls
+                  index={i}
+                  length={standards.items.length}
+                  onMove={(idx, d) =>
+                    setSection("standards", { items: move(standards.items, idx, d) })
+                  }
+                  onRemove={(idx) =>
+                    setSection("standards", {
+                      items: standards.items.filter((_, x) => x !== idx),
+                    })
+                  }
+                  label="standard"
+                />
+              </div>
+              <Input
+                className={inputCls}
+                value={item.title}
+                onChange={(e) =>
+                  setSection("standards", {
+                    items: setAt(standards.items, i, { title: e.target.value }),
+                  })
+                }
+                placeholder="Data Sovereignty"
+              />
+              <Textarea
+                className={inputCls}
+                rows={2}
+                value={item.desc}
+                onChange={(e) =>
+                  setSection("standards", {
+                    items: setAt(standards.items, i, { desc: e.target.value }),
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* 7. Design partners ---------------------------------------------- */}
+        <div className={cardCls}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">7. Design partners</h2>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setSection("partners", {
+                  offers: [...partners.offers, { code: "", title: "", body: "", note: "" }],
+                })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add offer
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={partners.eyebrow}
+                onChange={(e) => setSection("partners", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={partners.heading}
+                onChange={(e) => setSection("partners", { heading: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Subtitle</label>
+              <Input
+                className={inputCls}
+                value={partners.aside}
+                onChange={(e) => setSection("partners", { aside: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {partners.offers.map((offer, i) => (
+            <div key={i} className={itemCls}>
+              <div className="flex items-start gap-3">
+                <Input
+                  className={inputCls}
+                  value={offer.code}
+                  onChange={(e) =>
+                    setSection("partners", {
+                      offers: setAt(partners.offers, i, { code: e.target.value }),
+                    })
+                  }
+                  placeholder="Paid pilot first"
+                />
+                <RowControls
+                  index={i}
+                  length={partners.offers.length}
+                  onMove={(idx, d) =>
+                    setSection("partners", { offers: move(partners.offers, idx, d) })
+                  }
+                  onRemove={(idx) =>
+                    setSection("partners", {
+                      offers: partners.offers.filter((_, x) => x !== idx),
+                    })
+                  }
+                  label="offer"
+                />
+              </div>
+              <Input
+                className={inputCls}
+                value={offer.title}
+                onChange={(e) =>
+                  setSection("partners", {
+                    offers: setAt(partners.offers, i, { title: e.target.value }),
+                  })
+                }
+                placeholder="Prove it on your problem"
+              />
+              <Textarea
+                className={inputCls}
+                rows={2}
+                value={offer.body}
+                onChange={(e) =>
+                  setSection("partners", {
+                    offers: setAt(partners.offers, i, { body: e.target.value }),
+                  })
+                }
+              />
+              <Input
+                className={inputCls}
+                value={offer.note}
+                onChange={(e) =>
+                  setSection("partners", {
+                    offers: setAt(partners.offers, i, { note: e.target.value }),
+                  })
+                }
+                placeholder="No annual contract to start"
+              />
+            </div>
+          ))}
+
+          <div className={itemCls}>
+            <h3 className="text-sm font-semibold text-slate-100">Cohort banner</h3>
+            <Input
+              className={inputCls}
+              value={partners.cohort.eyebrow}
+              onChange={(e) =>
+                setSection("partners", {
+                  cohort: { ...partners.cohort, eyebrow: e.target.value },
+                })
+              }
+              placeholder="Cohort Two · Now Open"
+            />
+            <Textarea
+              className={inputCls}
+              rows={2}
+              value={partners.cohort.body}
+              onChange={(e) =>
+                setSection("partners", { cohort: { ...partners.cohort, body: e.target.value } })
+              }
+            />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Input
+                className={inputCls}
+                value={partners.cohort.cta.label}
+                onChange={(e) =>
+                  setSection("partners", {
+                    cohort: {
+                      ...partners.cohort,
+                      cta: { ...partners.cohort.cta, label: e.target.value },
+                    },
+                  })
+                }
+                placeholder="Apply as a design partner"
+              />
+              <Input
+                className={inputCls}
+                value={partners.cohort.cta.href}
+                onChange={(e) =>
+                  setSection("partners", {
+                    cohort: {
+                      ...partners.cohort,
+                      cta: { ...partners.cohort.cta, href: e.target.value },
+                    },
+                  })
+                }
+                placeholder="#cta"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 8. FAQ ----------------------------------------------------------- */}
+        <div className={cardCls}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">8. FAQ</h2>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setSection("faq", { items: [...faq.items, { question: "", answer: "" }] })
+              }
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add question
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div>
+              <label className={labelCls}>Kicker</label>
+              <Input
+                className={inputCls}
+                value={faq.eyebrow}
+                onChange={(e) => setSection("faq", { eyebrow: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Heading</label>
+              <Input
+                className={inputCls}
+                value={faq.heading}
+                onChange={(e) => setSection("faq", { heading: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {faq.items.map((item, i) => (
+            <div key={i} className={itemCls}>
+              <div className="flex items-start gap-3">
+                <Input
+                  className={inputCls}
+                  value={item.question}
+                  onChange={(e) =>
+                    setSection("faq", { items: setAt(faq.items, i, { question: e.target.value }) })
+                  }
+                  placeholder={`Question ${i + 1}`}
+                />
+                <RowControls
+                  index={i}
+                  length={faq.items.length}
+                  onMove={(idx, d) => setSection("faq", { items: move(faq.items, idx, d) })}
+                  onRemove={(idx) =>
+                    setSection("faq", { items: faq.items.filter((_, x) => x !== idx) })
+                  }
+                  label="question"
+                />
+              </div>
+              <Textarea
+                className={inputCls}
+                rows={3}
+                value={item.answer}
+                onChange={(e) =>
+                  setSection("faq", { items: setAt(faq.items, i, { answer: e.target.value }) })
+                }
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* 9. Closing panels ------------------------------------------------ */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">9. Closing panels</h2>
+          <p className={noteCls}>The two panels at the foot of the page.</p>
+
+          {(["partners", "careers"] as const).map((side) => {
+            const panel = dualCta[side];
+            return (
+              <div key={side} className={itemCls}>
+                <h3 className="text-sm font-semibold text-slate-100">
+                  {side === "partners" ? "Left — clients & partners" : "Right — careers & talent"}
+                </h3>
+                <Input
+                  className={inputCls}
+                  value={panel.eyebrow}
+                  onChange={(e) =>
+                    setSection("dualCta", {
+                      [side]: { ...panel, eyebrow: e.target.value },
+                    } as Partial<AboutPageContent["dualCta"]>)
+                  }
+                  placeholder="For Clients & Partners"
+                />
+                <Input
+                  className={inputCls}
+                  value={panel.heading}
+                  onChange={(e) =>
+                    setSection("dualCta", {
+                      [side]: { ...panel, heading: e.target.value },
+                    } as Partial<AboutPageContent["dualCta"]>)
+                  }
+                />
+                <Textarea
+                  className={inputCls}
+                  rows={2}
+                  value={panel.body}
+                  onChange={(e) =>
+                    setSection("dualCta", {
+                      [side]: { ...panel, body: e.target.value },
+                    } as Partial<AboutPageContent["dualCta"]>)
+                  }
+                />
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Input
+                    className={inputCls}
+                    value={panel.cta.label}
+                    onChange={(e) =>
+                      setSection("dualCta", {
+                        [side]: { ...panel, cta: { ...panel.cta, label: e.target.value } },
+                      } as Partial<AboutPageContent["dualCta"]>)
+                    }
+                  />
+                  <Input
+                    className={inputCls}
+                    value={panel.cta.href}
+                    onChange={(e) =>
+                      setSection("dualCta", {
+                        [side]: { ...panel, cta: { ...panel.cta, href: e.target.value } },
+                      } as Partial<AboutPageContent["dualCta"]>)
+                    }
+                    placeholder="/careers"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* SEO -------------------------------------------------------------- */}
+        <div className={cardCls}>
+          <h2 className="text-lg font-semibold text-slate-100">SEO</h2>
+          <div>
+            <label className={labelCls}>Meta title</label>
+            <Input
+              className={inputCls}
+              value={metaTitle}
+              onChange={(e) => setMetaTitle(e.target.value)}
+              placeholder="About Us · Rebellabz"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Meta description</label>
+            <Textarea
+              className={inputCls}
+              rows={2}
+              value={metaDescription}
+              onChange={(e) => setMetaDescription(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 pb-10">
+          <Button type="button" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
           </Button>
         </div>
       </div>
