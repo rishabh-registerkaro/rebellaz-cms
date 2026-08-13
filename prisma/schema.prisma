@@ -213,6 +213,8 @@ model Lead {
   id      String     @id @default(cuid())
   name    String
   email   String
+  /// Required on every lead: the team calls people back, so a submission
+  /// without a number is not actionable. Every website form asks for one.
   phoneNo String
   status  LeadStatus @default(new)
   // Which website form this lead came from (e.g. "Contact — Request a Quote")
@@ -220,13 +222,6 @@ model Lead {
   // Form-specific fields as {"Field Label": value} pairs — differs per form
   // (dropdowns, subject, message…), so new forms never need schema changes.
   formData Json? @map("form_data")
-
-  // CV / resume attached on the website form. The file itself lives on
-  // Hostinger under HOSTINGER_LEAD_PATH; this is the public URL the dashboard
-  // links to. attachmentName keeps the visitor's original filename for display,
-  // since the stored name is prefixed with a timestamp + random suffix.
-  attachmentUrl  String? @map("attachment_url") @db.Text
-  attachmentName String? @map("attachment_name")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -37,11 +37,10 @@ const escapeHtml = (s: unknown) =>
 export async function sendLeadNotification(lead: {
   name: string;
   email: string;
-  phoneNo: string;
+  /** Every form collects one; typed nullable only for leads stored before that. */
+  phoneNo: string | null;
   leadSource: string;
   formData?: Record<string, string> | null;
-  attachmentUrl?: string | null;
-  attachmentName?: string | null;
   createdAt?: Date;
 }) {
   try {
@@ -96,20 +95,22 @@ export async function sendLeadNotification(lead: {
                   </td>
                 </tr>
                 ${row("EMAIL", escapeHtml(lead.email), `mailto:${escapeHtml(lead.email)}`)}
-                ${row("PHONE", escapeHtml(lead.phoneNo), `tel:${escapeHtml(lead.phoneNo.replace(/[^\d+]/g, ""))}`)}
+                ${
+                  // Every form collects a number now, but a lead stored before
+                  // that may not have one — an empty PHONE row with a dead
+                  // tel: link is worse than no row.
+                  lead.phoneNo
+                    ? row(
+                        "PHONE",
+                        escapeHtml(lead.phoneNo),
+                        `tel:${escapeHtml(lead.phoneNo.replace(/[^\d+]/g, ""))}`
+                      )
+                    : ""
+                }
                 ${row("SUBMITTED FROM", escapeHtml(lead.leadSource))}
                 ${
                   detailRows
                     ? `<tr><td colspan="2" style="padding:16px 24px 0;font-size:11px;font-weight:800;letter-spacing:0.12em;color:#818cf8;border-top:1px solid #334155;">FORM DETAILS</td></tr>${detailRows}`
-                    : ""
-                }
-                ${
-                  lead.attachmentUrl
-                    ? row(
-                        "CV / RESUME",
-                        escapeHtml(lead.attachmentName || "Download attachment"),
-                        escapeHtml(lead.attachmentUrl)
-                      )
                     : ""
                 }
                 <tr>
@@ -137,11 +138,8 @@ export async function sendLeadNotification(lead: {
       ``,
       `Name: ${lead.name}`,
       `Email: ${lead.email}`,
-      `Phone: ${lead.phoneNo}`,
+      ...(lead.phoneNo ? [`Phone: ${lead.phoneNo}`] : []),
       ...Object.entries(lead.formData ?? {}).map(([k, v]) => `${k}: ${v}`),
-      ...(lead.attachmentUrl
-        ? [`CV / Resume: ${lead.attachmentName || "attachment"} — ${lead.attachmentUrl}`]
-        : []),
       ``,
       `Received: ${when} IST`,
     ].join("\n");

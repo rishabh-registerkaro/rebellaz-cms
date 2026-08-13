@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Edit, Plus, Trash2, Search, View, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Edit, Plus, Trash2, Search, View, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -136,7 +136,9 @@ export default function LeadsPage() {
         (lead) =>
           lead.name.toLowerCase().includes(searchLower) ||
           lead.email.toLowerCase().includes(searchLower) ||
-          lead.phoneNo.toLowerCase().includes(searchLower) ||
+          // Optional now — the collaboration forms do not collect one, and
+          // calling .toLowerCase() on a missing value threw here.
+          (lead.phoneNo ?? "").toLowerCase().includes(searchLower) ||
           (lead.leadSource &&
             lead.leadSource.toLowerCase().includes(searchLower)) ||
           Object.values(lead.formData ?? {}).some((v) =>
@@ -346,7 +348,7 @@ export default function LeadsPage() {
 
         {/* Leads Table */}
         <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl p-6">
-          {/* min-w keeps the eight columns readable: the table fills wide
+          {/* min-w keeps the seven columns readable: the table fills wide
               screens and scrolls inside the card below that, instead of
               squeezing every cell into an unreadable wrap. */}
           <Table className="min-w-[960px]">
@@ -355,7 +357,6 @@ export default function LeadsPage() {
                 <TableHead className="text-slate-300 whitespace-nowrap">Name/Email</TableHead>
                 <TableHead className="text-slate-300 whitespace-nowrap">Phone</TableHead>
                 <TableHead className="text-slate-300 whitespace-nowrap">Topic</TableHead>
-                <TableHead className="text-slate-300 whitespace-nowrap">CV</TableHead>
                 <TableHead className="text-slate-300 whitespace-nowrap">Status</TableHead>
                 <TableHead className="text-slate-300 whitespace-nowrap">Source</TableHead>
                 <TableHead className="text-slate-300 whitespace-nowrap">Created</TableHead>
@@ -366,39 +367,20 @@ export default function LeadsPage() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                // Skeleton loading rows
+                // Skeleton loading rows — one cell per header column, so the
+                // placeholder table has the same shape as the loaded one.
                 Array.from({ length: 5 }).map((_, index) => (
                   <TableRow
                     key={`skeleton-${index}`}
                     className="border-slate-700 hover:bg-transparent"
                   >
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-24"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-32"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-28"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-20"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-24"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-12"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-6 bg-slate-700 rounded-full animate-pulse w-20"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-16"></div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="h-4 bg-slate-700 rounded animate-pulse w-28"></div>
-                    </TableCell>
+                    {["w-32", "w-28", "w-24", "w-20", "w-28", "w-24"].map((width) => (
+                      <TableCell key={width}>
+                        <div
+                          className={`h-4 bg-slate-700 rounded animate-pulse ${width}`}
+                        ></div>
+                      </TableCell>
+                    ))}
                     <TableCell>
                       <div className="flex justify-center gap-2">
                         <div className="h-8 w-8 bg-slate-700 rounded animate-pulse"></div>
@@ -424,26 +406,10 @@ export default function LeadsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-slate-300 whitespace-nowrap">
-                      {lead.phoneNo}
+                      {lead.phoneNo || <span className="text-slate-500">—</span>}
                     </TableCell>
                     <TableCell className="text-slate-300">
                       {Object.values(lead.formData ?? {})[0] || "-"}
-                    </TableCell>
-                    <TableCell>
-                      {lead.attachmentUrl ? (
-                        <a
-                          href={lead.attachmentUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={lead.attachmentName || "Open CV"}
-                          className="inline-flex items-center gap-1.5 text-sm text-indigo-300 transition-colors hover:text-indigo-200 hover:underline"
-                        >
-                          <Download className="size-3.5 shrink-0" />
-                          View
-                        </a>
-                      ) : (
-                        <span className="text-slate-500 text-sm">-</span>
-                      )}
                     </TableCell>
                     <TableCell>
                       <span
@@ -506,7 +472,7 @@ export default function LeadsPage() {
               ) : (
                 <TableRow className="border-slate-700 hover:bg-transparent">
                   <TableCell
-                    colSpan={9}
+                    colSpan={7}
                     className="text-center py-8 text-slate-400"
                   >
                     {search || status !== "all"
