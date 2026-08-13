@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
 import { requireRole } from "@/app/lib/utils/authorization";
+import { cacheGet, cacheSet, cacheClear } from "@/app/lib/utils/responseCache";
+import { withAboutDefaults } from "@/app/lib/content/about-content";
 import { CONTENT_ROLES } from "@/app/lib/constants/role";
 import { revalidateFrontendTags } from "@/app/lib/utils/revalidateFrontend";
 
@@ -47,14 +49,33 @@ export async function OPTIONS(req: NextRequest) {
 // GET — public: the frontend About page fetches this (singleton)
 export async function GET(req: NextRequest) {
   try {
+    const cached = cacheGet("about-page", "singleton");
+    if (cached) {
+      return NextResponse.json(cached, {
+        status: 200,
+        headers: { ...getCorsHeaders(req.headers.get("origin")), "x-cache": "HIT" },
+      });
+    }
+
     const aboutPage = await prisma.aboutPage.findFirst();
-    return NextResponse.json(
-      {
-        success: true,
-        aboutPage: aboutPage ? withMongoId(aboutPage) : null,
+
+    // Always a complete document, even before anyone opens the editor:
+    // returning a raw (or null) content object made the live page render
+    // `undefined` for any field the stored copy predates.
+    const payload = {
+      success: true,
+      aboutPage: {
+        ...(aboutPage ? withMongoId(aboutPage) : { _id: null, metaTitle: null, metaDescription: null }),
+        content: withAboutDefaults(aboutPage?.content),
       },
-      { status: 200, headers: getCorsHeaders(req.headers.get('origin')) }
-    );
+    };
+
+    cacheSet("about-page", "singleton", payload);
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: { ...getCorsHeaders(req.headers.get("origin")), "x-cache": "MISS" },
+    });
   } catch (error) {
     console.error("Error fetching about page:", error);
     return NextResponse.json(
@@ -93,6 +114,7 @@ export async function POST(req: NextRequest) {
       ? await prisma.aboutPage.update({ where: { id: existing.id }, data })
       : await prisma.aboutPage.create({ data });
 
+    cacheClear("about-page");
     await revalidateFrontendTags(["about-page"]);
 
     return NextResponse.json(
@@ -149,6 +171,7 @@ export async function PATCH(req: NextRequest) {
       data,
     });
 
+    cacheClear("about-page");
     await revalidateFrontendTags(["about-page"]);
 
     return NextResponse.json(
