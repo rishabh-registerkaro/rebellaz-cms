@@ -3,7 +3,6 @@ import { Prisma } from "@prisma/client";
 import { sendLeadNotification } from "@/app/lib/config/email";
 import { withMongoId } from "@/app/lib/utils/serialize";
 import { getCorsHeaders } from "@/app/lib/utils/corsHeader";
-import { isOwnLeadAttachment } from "@/app/lib/utils/leadAttachment";
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/app/lib/utils/authorization";
 import { ADMIN_ROLES } from "@/app/lib/constants/role";
@@ -28,7 +27,10 @@ function validateLead(name: unknown, email: unknown, phone: unknown): string | n
     return "Please enter a valid email address.";
   }
 
-  if (typeof phone !== "string") return "Please enter your phone number.";
+  // Required on every form — the team replies by phone as often as by email.
+  if (typeof phone !== "string" || phone.trim() === "") {
+    return "Please enter your phone number.";
+  }
   const digits = phone.replace(/[\s\-().]/g, "").replace(/^\+/, "");
   if (!/^\d{7,15}$/.test(digits)) {
     return "Please enter a valid phone number (7–15 digits).";
@@ -46,6 +48,39 @@ function sanitizeFormData(raw: unknown): Record<string, string> | undefined {
     if (k && v) clean[k] = v;
   }
   return Object.keys(clean).length > 0 ? clean : undefined;
+}
+
+/**
+ * The page the form was submitted from, e.g. "/solutions/agentic-automation".
+ *
+ * Stored as one more entry in formData rather than as its own column: it is
+ * per-submission context like every other field there, so it needs no schema
+ * change and shows up in the dashboard's Form Details automatically.
+ *
+ * Only a same-site path is kept. An absolute URL would let a caller write an
+ * arbitrary link into a record an admin reads later, and the site's own origin
+ * adds nothing the path does not already say.
+ */
+function sanitizePagePath(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const path = raw.trim().slice(0, 300);
+  // "//host" is protocol-relative — a foreign URL wearing a path's clothes.
+  if (!path.startsWith("/") || path.startsWith("//")) return undefined;
+  return path;
+}
+
+/**
+ * formData with the submitting page appended.
+ *
+ * Appended last on purpose: the dashboard's Topic column shows the first value
+ * in formData, and that should stay the visitor's own answer.
+ */
+function withPagePath(
+  formData: Record<string, string> | undefined,
+  pagePath: string | undefined
+): Record<string, string> | undefined {
+  if (!pagePath) return formData;
+  return { ...(formData ?? {}), Page: pagePath };
 }
 
 export async function POST(req: NextRequest) {
@@ -70,25 +105,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // A CV is optional, but when present it must be a URL we produced in
-    // /api/lead/upload. Anything else is dropped rather than rejected: the
-    // visitor's enquiry is still worth capturing, and a stored attacker URL
-    // would be clicked later by an admin from the dashboard or the alert email.
-    let attachmentUrl: string | null = null;
-    let attachmentName: string | null = null;
-    if (typeof body.attachmentUrl === "string" && body.attachmentUrl.trim()) {
-      const candidate = body.attachmentUrl.trim();
-      if (isOwnLeadAttachment(candidate)) {
-        attachmentUrl = candidate;
-        attachmentName =
-          typeof body.attachmentName === "string" && body.attachmentName.trim()
-            ? body.attachmentName.trim().slice(0, 200)
-            : null;
-      } else {
-        console.warn("Rejected foreign lead attachment URL:", candidate.slice(0, 200));
-      }
-    }
-
     // Every submission is its own lead — the same person submitting from a
     // different page (or twice) must never overwrite an earlier lead.
     const lead = await prisma.lead.create({
@@ -99,9 +115,10 @@ export async function POST(req: NextRequest) {
         leadSource: (typeof body.leadSource === "string" && body.leadSource.trim()
           ? body.leadSource.trim().slice(0, 200)
           : "Website"),
-        formData: sanitizeFormData(body.formData) as Prisma.InputJsonValue | undefined,
-        attachmentUrl,
-        attachmentName,
+        formData: withPagePath(
+          sanitizeFormData(body.formData),
+          sanitizePagePath(body.pagePath)
+        ) as Prisma.InputJsonValue | undefined,
         status: "new",
       },
     });
@@ -115,8 +132,6 @@ export async function POST(req: NextRequest) {
         phoneNo: lead.phoneNo,
         leadSource: lead.leadSource,
         formData: lead.formData as Record<string, string> | null,
-        attachmentUrl: lead.attachmentUrl,
-        attachmentName: lead.attachmentName,
         createdAt: lead.createdAt,
       }),
       new Promise((resolve) => setTimeout(resolve, 8000)),

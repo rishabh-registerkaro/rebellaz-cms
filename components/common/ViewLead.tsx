@@ -2,7 +2,6 @@
 
 import { Lead } from "@/app/types/lead";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Download } from "lucide-react";
 
 interface ViewLeadProps {
   lead: Lead;
@@ -30,7 +29,7 @@ export default function ViewLead({ lead }: ViewLeadProps) {
       </div>
 
       <div className="space-y-4">
-        <Item label="Phone" value={lead.phoneNo} />
+        <Item label="Phone" value={lead.phoneNo || "—"} />
         <Item label="Submitted From" value={lead.leadSource || "-"} />
 
         <Item label="Status" value={lead.status} badge={true} />
@@ -40,32 +39,6 @@ export default function ViewLead({ lead }: ViewLeadProps) {
           value={new Date(lead.createdAt).toLocaleString()}
         />
       </div>
-
-      {/* CV / resume uploaded with the form. Opens the file on the media host
-          in a new tab; noopener so the opened page cannot reach back here. */}
-      {lead.attachmentUrl && (
-        <div>
-          <h3 className="text-sm font-semibold text-indigo-300 uppercase tracking-wide mb-2">
-            CV / Resume
-          </h3>
-          <a
-            href={lead.attachmentUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3 transition-colors hover:border-indigo-400 hover:bg-slate-800"
-          >
-            <span className="grid size-9 shrink-0 place-items-center rounded-md bg-indigo-500/20 text-indigo-300">
-              <Download className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-white">
-                {lead.attachmentName || "Download attachment"}
-              </span>
-              <span className="block text-xs text-slate-400">Click to open in a new tab</span>
-            </span>
-          </a>
-        </div>
-      )}
 
       {/* Form-specific fields — whatever {"Field Label": value} pairs the
           submitting form sent; new forms show up here automatically. */}
