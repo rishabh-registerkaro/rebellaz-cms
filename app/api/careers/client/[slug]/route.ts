@@ -31,10 +31,15 @@ export async function GET(req: NextRequest, context: { params: Promise<{ slug: s
       });
     }
 
-    // Filter on status in the query rather than fetching then checking: a draft
-    // must 404 publicly, and this way `status` never enters the response shape.
+    // Filter in the query rather than fetching then checking: a draft must 404
+    // publicly, and this way `status` never enters the response shape.
+    //
+    // `hidden` is filtered here too, so a role withdrawn from the site 404s on
+    // its direct URL as well. Hiding it only from the listing would leave every
+    // link already shared — in search results, in a message, on a job board —
+    // still open and still collecting applications.
     const career = await prisma.career.findFirst({
-      where: { slug, status: "published" },
+      where: { slug, status: "published", hidden: false },
       select: {
         slug: true,
         title: true,

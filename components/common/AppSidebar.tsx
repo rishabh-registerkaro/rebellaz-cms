@@ -22,6 +22,9 @@ import {
   Contact,
   ScrollText,
   BriefcaseBusiness,
+  ChartColumn,
+  Inbox,
+  FileUser,
 } from "lucide-react";
 import {
   Sidebar,
@@ -118,6 +121,21 @@ const navigationItems = [
             title: "Add New Role",
             url: "/dashboard/careers/create-career",
             icon: Plus,
+          },
+          {
+            title: "Overview",
+            url: "/dashboard/careers/overview",
+            icon: ChartColumn,
+          },
+          {
+            title: "Applications",
+            url: "/dashboard/careers/applications",
+            icon: Inbox,
+          },
+          {
+            title: "Resume Assets",
+            url: "/dashboard/careers/resumes",
+            icon: FileUser,
           },
           {
             title: "Disciplines",

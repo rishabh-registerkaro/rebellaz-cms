@@ -149,6 +149,7 @@ const EMPTY: CareerPayload = {
   salary: "",
   unit: "/day",
   featured: false,
+  hidden: false,
   description: "",
   summary: "",
   perks: [],
@@ -170,6 +171,7 @@ function toFormState(career?: Career): CareerPayload {
     salary: career.salary,
     unit: career.unit,
     featured: career.featured,
+    hidden: career.hidden,
     description: career.description ?? "",
     summary: career.summary ?? "",
     perks: career.perks ?? [],
@@ -466,6 +468,24 @@ export default function CareerForm({ career }: Props) {
             />
             <span className="text-sm text-slate-200">
               Featured — pin to the &ldquo;Featured this week&rdquo; panel on the careers hero
+            </span>
+          </label>
+
+          {/* Hiding is the alternative to deleting: the role, its description
+              and every application against it stay exactly as they are. */}
+          <label className="flex items-start gap-3 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={form.hidden ?? false}
+              onChange={(e) => set("hidden", e.target.checked)}
+              className="h-4 w-4 mt-0.5 accent-orange-600"
+            />
+            <span className="text-sm text-slate-200">
+              Hidden — take this role off the site without deleting it
+              <span className="block text-xs text-slate-400 mt-0.5">
+                Removed from the careers listing, search and its own URL. Applications already
+                received are kept, and unticking this puts it straight back.
+              </span>
             </span>
           </label>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { Search, ChevronLeft, ChevronRight, ArrowUpDown, UserPlus, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import axios from "axios";
 import ViewUser from "@/components/common/ViewUser";
+import { useUrlPagination } from "@/lib/useUrlPagination";
 
 interface User {
   id: string;
@@ -56,7 +57,10 @@ interface PaginationInfo {
   hasPrevPage: boolean;
 }
 
-export default function UsersPage() {
+function UsersPageInner() {
+  // Page number lives in the URL so a reload keeps the current page.
+  const { page, goToPage } = useUrlPagination();
+
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -160,18 +164,17 @@ export default function UsersPage() {
   };
 
   useEffect(() => {
-    fetchUsers(1);
     axios.get("/api/auth/profile", { withCredentials: true })
       .then((res) => { if (res.data.success) setCurrentUserRole(res.data.user.role); })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // One effect for every load: search and sort changes reset the page through
+  // goToPage(1), and the page itself comes from the URL.
   useEffect(() => {
-    // Reset to page 1 when search or sort changes
-    fetchUsers(1);
+    fetchUsers(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sortBy, sortOrder]);
+  }, [search, sortBy, sortOrder, page]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,6 +185,8 @@ export default function UsersPage() {
         toast.success("User created successfully", { closeButton: true, className: "" });
         setCreateDialogOpen(false);
         setCreateForm({ username: "", email: "", password: "", role: "" });
+        // The new user sorts first; move the URL with the list.
+        goToPage(1);
         fetchUsers(1);
       }
     } catch (error: any) {
@@ -205,6 +210,7 @@ export default function UsersPage() {
 
   const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
+      goToPage(1);
       fetchUsers(1);
     }
   };
@@ -327,7 +333,7 @@ export default function UsersPage() {
 
             {/* Apply Search Button */}
             <Button
-              onClick={() => fetchUsers(1)}
+              onClick={() => goToPage(1)}
               className="bg-indigo-500 hover:bg-indigo-600 text-white cursor-pointer whitespace-nowrap"
             >
               Apply Filters
@@ -442,7 +448,7 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => fetchUsers(1)}
+                  onClick={() => goToPage(1)}
                   disabled={!pagination.hasPrevPage}
                   className="border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
                 >
@@ -452,7 +458,7 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => fetchUsers(pagination.currentPage - 1)}
+                  onClick={() => goToPage(pagination.currentPage - 1)}
                   disabled={!pagination.hasPrevPage}
                   className="border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
                 >
@@ -476,7 +482,7 @@ export default function UsersPage() {
                         key={pageNum}
                         variant={pagination.currentPage === pageNum ? "default" : "outline"}
                         size="sm"
-                        onClick={() => fetchUsers(pageNum)}
+                        onClick={() => goToPage(pageNum)}
                         className={
                           pagination.currentPage === pageNum
                             ? "bg-indigo-500 hover:bg-indigo-600 text-white"
@@ -491,7 +497,7 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => fetchUsers(pagination.currentPage + 1)}
+                  onClick={() => goToPage(pagination.currentPage + 1)}
                   disabled={!pagination.hasNextPage}
                   className="border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
                 >
@@ -501,7 +507,7 @@ export default function UsersPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => fetchUsers(pagination.totalPages)}
+                  onClick={() => goToPage(pagination.totalPages)}
                   disabled={!pagination.hasNextPage}
                   className="border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
                 >
@@ -648,5 +654,14 @@ export default function UsersPage() {
         </Dialog>
       </div>
     </div>
+  );
+}
+
+/** useSearchParams() needs a Suspense boundary in an app-router client page. */
+export default function UsersPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 p-6" />}>
+      <UsersPageInner />
+    </Suspense>
   );
 }

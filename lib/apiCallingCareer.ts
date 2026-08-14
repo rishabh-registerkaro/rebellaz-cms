@@ -17,6 +17,8 @@ export interface Career {
   salary: string;
   unit: string;
   featured: boolean;
+  /** Withdrawn from the public site without being deleted. */
+  hidden: boolean;
   description: string | null;
   summary: string | null;
   /** "What you'll do" bullets rendered on the public role page. */
@@ -44,6 +46,7 @@ export interface CareerPayload {
   salary: string;
   unit: string;
   featured: boolean;
+  hidden?: boolean;
   description?: string;
   summary?: string;
   responsibilities?: string[];
@@ -71,6 +74,8 @@ export interface GetCareersParams {
   type?: string;
   status?: string;
   featured?: string;
+  /** "visible" | "hidden" — dashboard-only, the public API never sees hidden. */
+  visibility?: string;
   sort?: "newest" | "oldest";
 }
 

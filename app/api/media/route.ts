@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/app/lib/utils/authorization";
 import { CONTENT_ROLES } from "@/app/lib/constants/role";
 import prisma from "@/app/lib/config/db";
-import * as ftp from "basic-ftp";
-import { Readable } from "stream";
+import {
+  deleteFromHostinger,
+  mediaTarget,
+  sanitizeFilename,
+  uploadToHostinger,
+} from "@/app/lib/utils/hostingerFtp";
 
 const MAX_MEDIA_SIZE = 25 * 1024 * 1024; // 25MB
 const ALLOWED_MEDIA_TYPES = [
@@ -16,52 +20,6 @@ const ALLOWED_MEDIA_TYPES = [
   "video/mp4",
   "video/webm",
 ];
-
-function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-// basic-ftp wants a bare host/IP — strip any ftp:// scheme, path or trailing slash
-// that crept in from a copy-pasted connection string, otherwise DNS gets asked to
-// resolve the whole URL and fails with ENOTFOUND.
-function ftpHost(): string {
-  const raw = (process.env.HOSTINGER_FTP_HOST || "").trim();
-  return raw.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/[/:].*$/, "");
-}
-
-async function connectFtp(client: ftp.Client): Promise<void> {
-  await client.access({
-    host: ftpHost(),
-    user: process.env.HOSTINGER_FTP_USER!,
-    password: process.env.HOSTINGER_FTP_PASS!,
-    port: Number(process.env.HOSTINGER_FTP_PORT) || 21,
-    secure: false,
-  });
-}
-
-async function uploadToHostinger(buffer: Buffer, filename: string): Promise<string> {
-  const client = new ftp.Client();
-  try {
-    await connectFtp(client);
-    await client.ensureDir(process.env.HOSTINGER_MEDIA_PATH || "/public_html/media");
-    await client.uploadFrom(Readable.from(buffer), filename);
-    const baseUrl = (process.env.HOSTINGER_MEDIA_URL || "").replace(/\/$/, "");
-    return `${baseUrl}/${filename}`;
-  } finally {
-    client.close();
-  }
-}
-
-async function deleteFromHostinger(filename: string): Promise<void> {
-  const client = new ftp.Client();
-  try {
-    await connectFtp(client);
-    const remotePath = `${process.env.HOSTINGER_MEDIA_PATH || "/public_html/media"}/${filename}`;
-    await client.remove(remotePath);
-  } finally {
-    client.close();
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -87,7 +45,7 @@ export async function POST(req: NextRequest) {
     const safeFilename = `${Date.now()}_${sanitizeFilename(file.name)}`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    const url = await uploadToHostinger(buffer, safeFilename);
+    const url = await uploadToHostinger(buffer, safeFilename, mediaTarget());
     const format = file.name.split(".").pop()?.toLowerCase() || "bin";
     const resourceType = file.type.startsWith("image/") ? "image" : "raw";
 
@@ -188,7 +146,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     try {
-      await deleteFromHostinger(public_id);
+      await deleteFromHostinger(public_id, mediaTarget());
     } catch {
       // file may already be missing on Hostinger — still clean up DB record
     }

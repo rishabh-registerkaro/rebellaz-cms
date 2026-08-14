@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, ChangeEvent } from "react";
+import { Suspense, useState, useEffect, ChangeEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner"
 import { createCategory, deleteCategory } from "@/lib/apiCallingCategory";
+import { useUrlPagination } from "@/lib/useUrlPagination";
 
 const toastConfig = {
   closeButton: true,
@@ -37,7 +38,7 @@ interface Category {
   postCount?: number;
 }
 
-export default function CategoryPage() {
+function CategoryPageInner() {
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,7 +53,8 @@ export default function CategoryPage() {
   const [autoGenerateSlug, setAutoGenerateSlug] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
+  // Page number lives in the URL so a reload keeps the current chunk.
+  const { page: currentPage, goToPage: setCurrentPage } = useUrlPagination();
   const itemsPerPage = 20;
   const [serverTotalPages, setServerTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -556,7 +558,7 @@ export default function CategoryPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                       disabled={currentPage === 1}
                       className="text-slate-400 hover:text-white disabled:opacity-50"
                     >
@@ -565,7 +567,7 @@ export default function CategoryPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                       disabled={currentPage === totalPages || totalPages === 0}
                       className="text-slate-400 hover:text-white disabled:opacity-50"
                     >
@@ -588,5 +590,14 @@ export default function CategoryPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** useSearchParams() needs a Suspense boundary in an app-router client page. */
+export default function CategoryPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 p-6" />}>
+      <CategoryPageInner />
+    </Suspense>
   );
 }

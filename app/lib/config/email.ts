@@ -157,6 +157,133 @@ export async function sendLeadNotification(lead: {
   }
 }
 
+/**
+ * Notify the admin that a candidate applied.
+ *
+ * Deliberately its own function rather than a branch inside the lead mailer:
+ * the two are read by different people, and this one has to put the CV link
+ * where a hiring manager will find it. Never throws — a failed email must not
+ * fail the application.
+ */
+export async function sendApplicationNotification(application: {
+  name: string;
+  email: string;
+  phoneNo: string;
+  /** Null for talent-pipeline signups, which carry a discipline instead. */
+  roleTitle: string | null;
+  discipline: string | null;
+  note: string | null;
+  resumeUrl: string | null;
+  resumeName: string | null;
+  source: string;
+  pagePath: string | null;
+  createdAt?: Date;
+}) {
+  try {
+    const adminEmail = process.env.ADMIN_NOTIFY_EMAIL;
+    if (!adminEmail) {
+      console.warn("ADMIN_NOTIFY_EMAIL not set — skipping application notification");
+      return;
+    }
+    const cc = process.env.NOTIFY_CC_EMAIL || undefined;
+
+    const row = (label: string, value: string, link?: string) => `
+      <tr>
+        <td colspan="2" style="padding:12px 24px 0;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:0.08em;">${label}</td>
+      </tr>
+      <tr>
+        <td colspan="2" style="padding:3px 24px 12px;font-size:14.5px;color:#f1f5f9;font-weight:600;line-height:1.5;word-break:break-word;">${
+          link ? `<a href="${link}" style="color:#a5b4fc;text-decoration:none;">${value}</a>` : value
+        }</td>
+      </tr>`;
+
+    const when = (application.createdAt ?? new Date()).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+
+    const applyingFor = application.roleTitle || application.discipline || "Talent pipeline";
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#0f172a;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:32px 16px;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+          <tr>
+            <td style="padding:0 4px 14px;font-size:13px;font-weight:700;color:#e2e8f0;">
+              <span style="display:inline-block;width:8px;height:8px;background:#22c55e;border-radius:50%;margin-right:8px;"></span>Rebellabz CMS
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#1e293b;border:1px solid #334155;border-radius:14px;overflow:hidden;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:22px 24px;border-bottom:1px solid #334155;">
+                    <div style="font-size:12px;font-weight:700;letter-spacing:0.1em;color:#818cf8;">NEW APPLICATION</div>
+                    <div style="font-size:20px;font-weight:800;color:#f8fafc;margin-top:6px;">${escapeHtml(application.name)}</div>
+                    <div style="font-size:13px;color:#94a3b8;margin-top:4px;">${escapeHtml(applyingFor)} • ${escapeHtml(when)} IST</div>
+                  </td>
+                </tr>
+                ${row("EMAIL", escapeHtml(application.email), `mailto:${escapeHtml(application.email)}`)}
+                ${row("PHONE", escapeHtml(application.phoneNo), `tel:${escapeHtml(application.phoneNo.replace(/[^\d+]/g, ""))}`)}
+                ${application.roleTitle ? row("ROLE", escapeHtml(application.roleTitle)) : ""}
+                ${application.discipline ? row("DISCIPLINE", escapeHtml(application.discipline)) : ""}
+                ${row("SUBMITTED FROM", escapeHtml(application.source))}
+                ${
+                  // The whole point of the alert: one click to the CV.
+                  application.resumeUrl
+                    ? row(
+                        "CV / RESUME",
+                        escapeHtml(application.resumeName || "Open CV"),
+                        escapeHtml(application.resumeUrl)
+                      )
+                    : row("CV / RESUME", "Not attached")
+                }
+                ${application.note ? row("WHY THIS ROLE", escapeHtml(application.note)) : ""}
+                <tr>
+                  <td colspan="2" style="padding:16px 24px 20px;border-top:1px solid #334155;">
+                    <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.6;">Open your CMS dashboard → <strong style="color:#cbd5e1;">Careers → Applications</strong> to review this candidate.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+
+    const text = [
+      `New application — ${applyingFor}`,
+      ``,
+      `Name: ${application.name}`,
+      `Email: ${application.email}`,
+      `Phone: ${application.phoneNo}`,
+      ...(application.roleTitle ? [`Role: ${application.roleTitle}`] : []),
+      ...(application.discipline ? [`Discipline: ${application.discipline}`] : []),
+      `Submitted from: ${application.source}${application.pagePath ? ` (${application.pagePath})` : ""}`,
+      `CV: ${application.resumeUrl ? `${application.resumeName || "resume"} — ${application.resumeUrl}` : "Not attached"}`,
+      ...(application.note ? [``, `Why this role:`, application.note] : []),
+      ``,
+      `Received: ${when} IST`,
+    ].join("\n");
+
+    await createNotifyTransporter().sendMail({
+      from: process.env.NOTIFY_SMTP_FROM || process.env.SMTP_FROM,
+      to: adminEmail,
+      cc,
+      subject: `New application: ${application.name} — ${applyingFor}`,
+      text,
+      html,
+    });
+  } catch (error) {
+    console.error("Failed to send application notification email:", error);
+  }
+}
+
 export async function sendOTP(email: string, otp: string) {
     try {
         if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {

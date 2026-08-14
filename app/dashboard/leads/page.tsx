@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Edit, Plus, Trash2, Search, View, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,6 +41,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import AddLeadForm from "@/components/common/AddLead";
+import { useUrlPagination } from "@/lib/useUrlPagination";
 
 interface PaginationInfo {
   currentPage: number;
@@ -51,7 +52,10 @@ interface PaginationInfo {
   hasPrevPage: boolean;
 }
 
-export default function LeadsPage() {
+function LeadsPageInner() {
+  // Page number lives in the URL, so a reload or a shared link lands on the
+  // page the admin was actually looking at.
+  const { page, goToPage } = useUrlPagination();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,15 +114,12 @@ export default function LeadsPage() {
     }
   };
 
+  // One effect, keyed on both: changing the filter resets to page 1 through
+  // goToPage, and every load — first paint included — reads the current page.
   useEffect(() => {
-    fetchLeads(1);
+    fetchLeads(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
-
-  useEffect(() => {
-    fetchLeads(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status, page]);
 
   // Filter leads based on search and status
   useEffect(() => {
@@ -296,7 +297,12 @@ export default function LeadsPage() {
 
           <Select
             value={status}
-            onValueChange={(value) => setStatus(value as any)}
+            onValueChange={(value) => {
+              setStatus(value as any);
+              // A filter change invalidates the page number — page 7 of the old
+              // result set is rarely a page of the new one.
+              goToPage(1);
+            }}
           >
             <SelectTrigger className="w-full sm:w-[180px] rounded-lg border border-slate-600 bg-slate-900/60 text-white">
               <SelectValue placeholder="All Status" />
@@ -542,7 +548,7 @@ export default function LeadsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchLeads(pagination.currentPage - 1)}
+                onClick={() => goToPage(pagination.currentPage - 1)}
                 disabled={!pagination.hasPrevPage}
                 className="border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
               >
@@ -566,7 +572,7 @@ export default function LeadsPage() {
                       key={pageNum}
                       variant={pagination.currentPage === pageNum ? "default" : "outline"}
                       size="sm"
-                      onClick={() => fetchLeads(pageNum)}
+                      onClick={() => goToPage(pageNum)}
                       className={
                         pagination.currentPage === pageNum
                           ? "bg-indigo-500 hover:bg-indigo-600 text-white"
@@ -581,7 +587,7 @@ export default function LeadsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchLeads(pagination.currentPage + 1)}
+                onClick={() => goToPage(pagination.currentPage + 1)}
                 disabled={!pagination.hasNextPage}
                 className="border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
               >
@@ -601,5 +607,18 @@ export default function LeadsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * useSearchParams() (via useUrlPagination) requires a Suspense boundary in an
+ * app-router client page, otherwise the whole route is forced out of static
+ * rendering.
+ */
+export default function LeadsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 p-6" />}>
+      <LeadsPageInner />
+    </Suspense>
   );
 }
