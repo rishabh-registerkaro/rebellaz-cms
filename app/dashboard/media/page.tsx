@@ -2,20 +2,22 @@
 "use client";
 
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Asset } from "@/app/types/media";
 import { deleteFileFromMedia, uploadFileToMedia } from "@/app/lib/utils/media";
+import { useUrlPagination } from "@/lib/useUrlPagination";
 
 
 
-export default function MediaLibrary() {
+function MediaLibraryInner() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [page, setPage] = useState(1);
+  // Page number lives in the URL so a reload keeps the admin where they were.
+  const { page, goToPage } = useUrlPagination();
   const [pagination, setPagination] = useState({
     currentPage: 1,
     totalPages: 1,
@@ -66,7 +68,7 @@ export default function MediaLibrary() {
       await uploadFileToMedia(file);
       toast.success("Upload successful!", { id: toastId });
       // New uploads sort first — jump to page 1
-      setPage(1);
+      goToPage(1);
       loadAssets(1);
     } catch (err: any) {
       toast.error(err.message || "Upload failed", { id: toastId });
@@ -236,7 +238,7 @@ export default function MediaLibrary() {
               <button
                 type="button"
                 disabled={!pagination.hasPrevPage || loading}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => goToPage(page - 1)}
                 className="px-4 py-2 rounded-md bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Previous
@@ -244,7 +246,7 @@ export default function MediaLibrary() {
               <button
                 type="button"
                 disabled={!pagination.hasNextPage || loading}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => goToPage(page + 1)}
                 className="px-4 py-2 rounded-md bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Next
@@ -316,5 +318,14 @@ export default function MediaLibrary() {
         )}
       </div>
     </div>
+  );
+}
+
+/** useSearchParams() needs a Suspense boundary in an app-router client page. */
+export default function MediaLibrary() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 p-6" />}>
+      <MediaLibraryInner />
+    </Suspense>
   );
 }

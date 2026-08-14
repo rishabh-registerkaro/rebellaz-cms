@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Star, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Star, Search, Eye, EyeOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +20,7 @@ import { useConfirm } from "@/components/common/ConfirmDialog";
 import {
   getCareers,
   deleteCareer,
+  updateCareer,
   type Career,
   type Pagination,
 } from "@/lib/apiCallingCareer";
@@ -38,6 +39,7 @@ function CareersPageInner() {
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -45,6 +47,7 @@ function CareersPageInner() {
   const [type, setType] = useState(ALL);
   const [status, setStatus] = useState(ALL);
   const [featured, setFeatured] = useState(ALL);
+  const [visibility, setVisibility] = useState(ALL);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   // Seeded from ?page= so a browser reload keeps the current page instead of
   // snapping back to 1. Only `page` is mirrored to the URL — the filters stay
@@ -85,6 +88,7 @@ function CareersPageInner() {
         type: type === ALL ? "" : type,
         status: status === ALL ? "" : status,
         featured: featured === ALL ? "" : featured,
+        visibility: visibility === ALL ? "" : visibility,
         sort,
       });
       setCareers(res.careers ?? []);
@@ -96,7 +100,7 @@ function CareersPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, category, type, status, featured, sort]);
+  }, [page, search, category, type, status, featured, visibility, sort]);
 
   useEffect(() => {
     load();
@@ -106,6 +110,33 @@ function CareersPageInner() {
   const onFilterChange = (setter: (v: string) => void) => (v: string) => {
     setter(v);
     goToPage(1);
+  };
+
+  /**
+   * Hide or unhide without opening the editor.
+   *
+   * The row is patched in place rather than refetched — with a visibility
+   * filter applied, a refetch would make the row vanish mid-click, which reads
+   * as "did that delete it?".
+   */
+  const toggleHidden = async (career: Career) => {
+    setTogglingId(career._id);
+    const next = !career.hidden;
+    try {
+      await updateCareer(career._id, { hidden: next });
+      setCareers((rows) =>
+        rows.map((row) => (row._id === career._id ? { ...row, hidden: next } : row))
+      );
+      toast.success(next ? "Role hidden from the site" : "Role is live again", {
+        closeButton: true,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update role", {
+        closeButton: true,
+      });
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const handleDelete = async (career: Career) => {
@@ -223,6 +254,17 @@ function CareersPageInner() {
               </SelectContent>
             </Select>
 
+            <Select value={visibility} onValueChange={onFilterChange(setVisibility)}>
+              <SelectTrigger className={`${controlCls} w-[170px]`}>
+                <SelectValue placeholder="All visibility" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL} className="cursor-pointer">On site & hidden</SelectItem>
+                <SelectItem value="visible" className="cursor-pointer">On the site</SelectItem>
+                <SelectItem value="hidden" className="cursor-pointer">Hidden only</SelectItem>
+              </SelectContent>
+            </Select>
+
             <Select
               value={sort}
               onValueChange={(v) => {
@@ -291,18 +333,41 @@ function CareersPageInner() {
                         </span>
                       </td>
                       <td className="px-5 py-4">
+                        {/* A hidden role reads as "Hidden" whatever its publish
+                            state — that is what a visitor sees, which is the
+                            question this column answers. */}
                         <span
                           className={`px-2 py-1 text-xs font-medium border ${
-                            c.status === "published"
-                              ? "bg-green-500/15 text-green-400 border-green-500/40"
-                              : "bg-yellow-500/15 text-yellow-400 border-yellow-500/40"
+                            c.hidden
+                              ? "bg-orange-500/15 text-orange-400 border-orange-500/40"
+                              : c.status === "published"
+                                ? "bg-green-500/15 text-green-400 border-green-500/40"
+                                : "bg-yellow-500/15 text-yellow-400 border-yellow-500/40"
                           }`}
                         >
-                          {c.status === "published" ? "Published" : "Draft"}
+                          {c.hidden ? "Hidden" : c.status === "published" ? "Published" : "Draft"}
                         </span>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={togglingId === c._id}
+                            className="border-slate-600 text-slate-200"
+                            title={
+                              c.hidden
+                                ? "Put this role back on the site"
+                                : "Take this role off the site, keeping it and its applications"
+                            }
+                            onClick={() => toggleHidden(c)}
+                          >
+                            {c.hidden ? (
+                              <Eye className="h-3.5 w-3.5" />
+                            ) : (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"

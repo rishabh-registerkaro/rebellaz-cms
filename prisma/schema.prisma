@@ -28,6 +28,17 @@ enum LeadStatus {
   lost
 }
 
+/// Where a candidate sits in the hiring pipeline. Separate from LeadStatus
+/// because the two are read by different people and mean different things —
+/// a lead is "converted", a candidate is "hired".
+enum ApplicationStatus {
+  new
+  reviewing
+  shortlisted
+  rejected
+  hired
+}
+
 // ─────────────────────────── Models ───────────────────────────
 
 model User {
@@ -174,9 +185,20 @@ model Career {
   metaDescription String? @db.Text
 
   status      PublishStatus @default(draft)
+  /// Withdraw a role from the public site without deleting it.
+  ///
+  /// Distinct from `status: draft`: a draft was never live, whereas a hidden
+  /// role has been published, has applications against it, and is being taken
+  /// down because enough candidates have applied. Its applications, counts and
+  /// copy all survive, so it can be brought back or archived later. Excluded
+  /// from the public listing, search, sitemap and detail page.
+  hidden      Boolean       @default(false)
   publishedAt DateTime?
   authorId    String
   author      User          @relation(fields: [authorId], references: [id])
+
+  applications CareerApplication[]
+
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -186,9 +208,83 @@ model Career {
   @@index([featured])
   // Public listing: published roles, newest first
   @@index([status, publishedAt])
+  // Public listing filters hidden roles out before anything else
+  @@index([status, hidden])
   // Paginated dashboard listing sorts by newest first
   @@index([createdAt])
   @@map("careers")
+}
+
+/// A candidate applying — either to a specific role, or to the talent pipeline
+/// with no role attached.
+///
+/// Deliberately NOT a Lead. A lead is a business enquiry the sales side works;
+/// an application is a person with a CV that the hiring side works. They have
+/// different statuses, different readers, and only one of them carries a file.
+model CareerApplication {
+  id String @id @default(cuid())
+
+  /// Null for talent-pipeline signups, which name a discipline instead of a
+  /// role. Also null once the role is deleted — the application outlives it,
+  /// which is why the title and slug below are snapshotted rather than joined.
+  careerId String?
+  career   Career? @relation(fields: [careerId], references: [id], onDelete: SetNull)
+
+  /// Copied at submission time so a deleted or renamed role still reads
+  /// correctly in the dashboard a year later.
+  roleTitle String? @db.VarChar(500)
+  roleSlug  String?
+  /// The discipline the candidate chose (pipeline) or the role carried.
+  discipline String?
+
+  name    String
+  email   String
+  phoneNo String
+  /// "Why this role" — free text from the form.
+  note    String? @db.Text
+
+  /// The CV. `resumeKey` is the stored filename on Hostinger, which is what
+  /// deletes are addressed by; `resumeUrl` is the public link the dashboard
+  /// opens; `resumeName` is what the candidate called it.
+  resumeUrl   String? @db.Text
+  resumeKey   String?
+  resumeName  String?
+  resumeBytes Int?
+
+  status ApplicationStatus @default(new)
+  /// Which form it came from, e.g. "Role page" or "Talent pipeline".
+  source String @default("Role page")
+  /// Page path the form was submitted from, mirroring how leads record it.
+  pagePath String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Dashboard listing: newest first, optionally filtered by status or role
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([careerId, createdAt])
+  @@index([email])
+  @@map("career_applications")
+}
+
+/// An uploaded CV, stored in its own Hostinger folder and its own table.
+///
+/// Mirrors MediaAsset field for field, but kept separate on purpose: these are
+/// candidates' personal documents uploaded by the public, and they must never
+/// appear in the editors' Media Library or be servable from the same listing.
+model ResumeAsset {
+  id       String @id @default(cuid())
+  key      String @unique
+  filename String
+  format   String
+  bytes    Int
+  url      String @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("resume_assets")
 }
 
 model Category {

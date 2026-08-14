@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { Trash2, FilePenLine, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useUrlPagination } from "@/lib/useUrlPagination";
 import {
   Table,
   TableBody,
@@ -43,7 +44,10 @@ interface PaginationInfo {
 
 const serviceTitle = (service: Service) => service.title || service.metaTitle || "";
 
-export default function ServicesPage() {
+function ServicesPageInner() {
+  // Page number lives in the URL so a reload keeps the current page.
+  const { page, goToPage } = useUrlPagination();
+
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -58,9 +62,9 @@ export default function ServicesPage() {
   });
 
   useEffect(() => {
-    fetchServices(1);
+    fetchServices(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page]);
 
   const fetchServices = async (page: number = 1) => {
     try {
@@ -340,7 +344,7 @@ export default function ServicesPage() {
                   variant="outline"
                   size="sm"
                   disabled={!pagination.hasPrevPage || loading}
-                  onClick={() => fetchServices(pagination.currentPage - 1)}
+                  onClick={() => goToPage(pagination.currentPage - 1)}
                   className="border-slate-600 bg-slate-800/60 text-slate-200 hover:bg-slate-700 hover:text-white disabled:opacity-40"
                 >
                   Previous
@@ -349,7 +353,7 @@ export default function ServicesPage() {
                   variant="outline"
                   size="sm"
                   disabled={!pagination.hasNextPage || loading}
-                  onClick={() => fetchServices(pagination.currentPage + 1)}
+                  onClick={() => goToPage(pagination.currentPage + 1)}
                   className="border-slate-600 bg-slate-800/60 text-slate-200 hover:bg-slate-700 hover:text-white disabled:opacity-40"
                 >
                   Next
@@ -363,4 +367,11 @@ export default function ServicesPage() {
   );
 }
 
-
+/** useSearchParams() needs a Suspense boundary in an app-router client page. */
+export default function ServicesPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 p-6" />}>
+      <ServicesPageInner />
+    </Suspense>
+  );
+}

@@ -97,6 +97,7 @@ export async function PUT(req: NextRequest, context: Ctx) {
         salary: body.salary ?? existing.salary,
         unit: TYPE_PAY[nextType]?.unit ?? body.unit ?? existing.unit,
         featured: body.featured === undefined ? existing.featured : Boolean(body.featured),
+        hidden: body.hidden === undefined ? existing.hidden : Boolean(body.hidden),
         description: body.description === undefined ? existing.description : body.description,
         summary: body.summary === undefined ? existing.summary : body.summary,
         // Follows the same partial-update rule as the fields above: an absent

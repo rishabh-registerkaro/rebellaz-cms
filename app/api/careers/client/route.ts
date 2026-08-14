@@ -56,7 +56,9 @@ export async function GET(req: NextRequest) {
       : DEFAULT_PAGE_SIZE;
     const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
 
-    const where: Prisma.CareerWhereInput = { status: "published" };
+    // `hidden: false` applies to the listing, the search and the slug list the
+    // frontend prerenders from — one predicate, every public surface.
+    const where: Prisma.CareerWhereInput = { status: "published", hidden: false };
 
     // "All roles" is the frontend's default tab and is not a stored value.
     if (category && category !== "All roles") where.category = category;

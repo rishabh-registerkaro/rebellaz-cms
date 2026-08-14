@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { Trash2, FilePenLine, RefreshCw } from 'lucide-react';
 import {getPosts, deletePost} from "@/lib/apiCalling"
 import { getUsers } from "@/lib/apiCallingProfile";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import axios from "axios";
+import { useUrlPagination } from "@/lib/useUrlPagination";
 
 interface Author {
   _id: string;
@@ -41,7 +42,11 @@ interface User {
   username: string;
 }
 
-export default function BlogPage() {
+function BlogPageInner() {
+  // Page number lives in the URL; `pagination.page` still comes back from the
+  // API and drives the display, but the URL is what a reload reads.
+  const { page, goToPage } = useUrlPagination();
+
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState<Pagination>({
@@ -72,10 +77,16 @@ export default function BlogPage() {
 
   // Fetch posts - only on page change, not on filter change
   useEffect(() => {
-    fetchPosts();
-  }, [pagination.page]);
+    fetchPosts(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
-  const fetchPosts = async () => {
+  /**
+   * `requestedPage` is passed in rather than read from state: the page now
+   * comes from the URL, and reading `pagination.page` here would use the value
+   * the API last returned — one render behind the click.
+   */
+  const fetchPosts = async (requestedPage: number = page) => {
     try {
       setLoading(true);
 
@@ -91,7 +102,7 @@ export default function BlogPage() {
       if (hasFilters) {
         // Use filter API when filters are active
         const params = new URLSearchParams({
-          page: String(pagination.page),
+          page: String(requestedPage),
           limit: String(pagination.limit),
         });
         
@@ -108,7 +119,7 @@ export default function BlogPage() {
       } else {
         // Use default getPosts when no filters
         data = await getPosts(
-          pagination.page,
+          requestedPage,
           pagination.limit,
           statusFilter || undefined
         );
@@ -161,13 +172,13 @@ export default function BlogPage() {
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
-      setPagination((prev) => ({ ...prev, page: newPage }));
+      goToPage(newPage);
     }
   };
 
   const applyFilters = () => {
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    fetchPosts();
+    goToPage(1);
+    fetchPosts(1);
   };
 
   const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -455,5 +466,14 @@ export default function BlogPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** useSearchParams() needs a Suspense boundary in an app-router client page. */
+export default function BlogPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 p-6" />}>
+      <BlogPageInner />
+    </Suspense>
   );
 }

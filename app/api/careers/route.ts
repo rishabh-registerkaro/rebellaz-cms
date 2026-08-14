@@ -145,6 +145,7 @@ export async function POST(req: NextRequest) {
         salary: body.salary,
         unit: TYPE_PAY[body.type]?.unit ?? body.unit ?? "/yr",
         featured: Boolean(body.featured),
+        hidden: Boolean(body.hidden),
         description: body.description ?? null,
         summary: body.summary ?? null,
         responsibilities: toBullets(body.responsibilities),
@@ -196,6 +197,9 @@ export async function GET(req: NextRequest) {
     const type = searchParams.get("type")?.trim() || "";
     const status = searchParams.get("status")?.trim() || "";
     const featured = searchParams.get("featured")?.trim() || "";
+    // "visibility=hidden" lists the roles taken off the site, "visible" the
+    // rest — the dashboard needs to find both, unlike the public API.
+    const visibility = searchParams.get("visibility")?.trim() || "";
     const sort = searchParams.get("sort") === "oldest" ? "asc" : "desc";
 
     const where: Prisma.CareerWhereInput = {};
@@ -212,6 +216,8 @@ export async function GET(req: NextRequest) {
     if (status === "draft" || status === "published") where.status = status as PublishStatus;
     if (featured === "true") where.featured = true;
     if (featured === "false") where.featured = false;
+    if (visibility === "hidden") where.hidden = true;
+    if (visibility === "visible") where.hidden = false;
 
     const [careers, total] = await Promise.all([
       prisma.career.findMany({
