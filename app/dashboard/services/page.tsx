@@ -75,11 +75,9 @@ function ServicesPageInner() {
 
       if (res.ok) {
         const data = await res.json();
-        // The ServicePage model also stores single pages that live elsewhere on
-        // the site — /resume-builder is one, edited from its own screen. Only
-        // Both templates are real service pages and belong on this screen.
-        // Other templates are excluded deliberately: showing them invites an
-        // editor to delete a page from a screen that has nothing to do with it.
+        // Both templates are real solution pages and belong on this screen.
+        // Any other template is excluded deliberately: showing a page here
+        // invites an editor to delete it from a screen unrelated to it.
         const SERVICE_TEMPLATES = ["division", "solution"];
         const onlyServices = (data.servicePages || []).filter((s: { template?: string }) =>
           SERVICE_TEMPLATES.includes(s.template ?? "division")
