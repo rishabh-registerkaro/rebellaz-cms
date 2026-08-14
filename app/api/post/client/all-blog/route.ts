@@ -55,15 +55,68 @@ export async function GET(req: NextRequest) {
         const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "10")));
         const skip  = (page - 1) * limit;
 
-        // "Most recent activity" = the later of updatedAt / publishedAt.
-        // Fetch the ordered page of ids via raw SQL, then hydrate with relations.
+        // Optional category filter, by slug or name. Handled here rather than in
+        // /api/post/client/filter so the blog listing has ONE endpoint and one
+        // response shape whether or not a category tab is active — the frontend
+        // paginates the same way in both cases.
+        const categoryParam = searchParams.get("category")?.trim() ?? "";
+        let categoryId: string | null = null;
+        if (categoryParam) {
+            const category = await prisma.category.findFirst({
+                where: { OR: [{ slug: categoryParam }, { name: categoryParam }] },
+                select: { id: true },
+            });
+            // An unknown category is an empty page, not every post: a mistyped
+            // ?category= must never look like "all posts".
+            if (!category) {
+                const origin = req.headers.get("origin");
+                return NextResponse.json(
+                    {
+                        success: true,
+                        posts: [],
+                        count: 0,
+                        pagination: {
+                            currentPage: 1,
+                            totalPages: 0,
+                            totalCount: 0,
+                            limit,
+                            hasNextPage: false,
+                            hasPrevPage: false,
+                        },
+                    },
+                    { status: 200, headers: getCorsHeaders(origin) }
+                );
+            }
+            categoryId = category.id;
+        }
+
+        const where = categoryId
+            ? { status: "published" as const, categories: { some: { id: categoryId } } }
+            : { status: "published" as const };
+
+        // Newest published first, falling back to createdAt for a post whose
+        // publish date was never stamped.
+        //
+        // NOT "most recent activity" (the later of updatedAt / publishedAt),
+        // which this used to sort by: under that rule a typo fixed in a
+        // two-year-old post lifts it above everything published since, and the
+        // blog's "latest" panel stops meaning latest. `id` breaks ties so the
+        // order is stable — posts published in the same second must not swap
+        // places between two requests, or page 2 can repeat a row from page 1.
         const [orderedIdRows, totalCount] = await Promise.all([
-            prisma.$queryRaw<Array<{ id: string }>>`
-                SELECT id FROM posts
-                WHERE status = 'published'
-                ORDER BY GREATEST(COALESCE(updatedAt,'1970-01-01'), COALESCE(publishedAt,'1970-01-01')) DESC
-                LIMIT ${limit} OFFSET ${skip}`,
-            prisma.post.count({ where: { status: "published" } }),
+            categoryId
+                ? prisma.$queryRaw<Array<{ id: string }>>`
+                    SELECT p.id FROM posts p
+                    INNER JOIN _PostCategories pc ON pc.B = p.id
+                    WHERE p.status = 'published' AND pc.A = ${categoryId}
+                    ORDER BY COALESCE(p.publishedAt, p.createdAt) DESC, p.id DESC
+                    LIMIT ${limit} OFFSET ${skip}`
+                : prisma.$queryRaw<Array<{ id: string }>>`
+                    SELECT id FROM posts
+                    WHERE status = 'published'
+                    ORDER BY COALESCE(publishedAt, createdAt) DESC, id DESC
+                    LIMIT ${limit} OFFSET ${skip}`,
+            prisma.post.count({ where }),
         ]);
 
         const orderedIds = orderedIdRows.map((row) => row.id);
