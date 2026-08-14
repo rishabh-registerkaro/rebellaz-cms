@@ -376,23 +376,46 @@ model ContactPage {
   @@map("contact_pages")
 }
 
+/// One row, two public pages: /terms and /privacy.
+///
+/// They are edited together because they are maintained together, but the site
+/// renders them separately — so each carries its own title, subtitle, SEO pair
+/// and revision date. Sharing those made the privacy page announce itself as
+/// "Terms & Policy", and made editing one policy restamp the other's date.
 model TermsPolicy {
-  id                   String   @id @default(cuid())
-  metaTitle            String?
-  metaDescription      String?  @db.Text
-  title                String?
+  id String @id @default(cuid())
+
+  // ── Terms & Conditions (/terms) ──
+  metaTitle       String?
+  metaDescription String?  @db.Text
+  title           String?
   // Text, not the default varchar(191): this is an intro paragraph, and MySQL
   // silently truncated anything longer — the shipped subtitle lost its last
   // 40 characters mid-sentence before this was caught.
-  subTitle             String?  @db.Text
-  // Each is { body: "<html>" } from the TipTap editor. Three separate
-  // policies rather than one document: they are legally distinct, get updated
-  // on different cycles, and the site links to each by its own anchor.
+  subTitle        String?  @db.Text
+
+  // ── Privacy Policy (/privacy) ──
+  privacyMetaTitle       String?
+  privacyMetaDescription String? @db.Text
+  privacyTitle           String?
+  privacySubTitle        String? @db.Text
+
+  // One { body: "<html>" } document per public page, from the TipTap editor.
+  // Two editors, not three: an editor should never have to work out which of
+  // several boxes ends up on which URL, and cookie wording belongs inside the
+  // privacy policy that it is part of.
   content              Json?
   privacyPolicyContent Json?
-  cookiePolicyContent  Json?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+
+  /// Stamped when that policy's own body changes, and shown to the reader as
+  /// "Last updated". `updatedAt` cannot serve this: a typo fixed in the terms
+  /// would redate the privacy policy, which for a legal document is a false
+  /// statement rather than a cosmetic one.
+  termsUpdatedAt   DateTime?
+  privacyUpdatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("terms_policies")
 }
