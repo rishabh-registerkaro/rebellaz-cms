@@ -183,11 +183,6 @@ const navigationItems = [
         icon: Contact,
       },
       {
-        title: "Resume Builder",
-        url: "/dashboard/resume-builder",
-        icon: FileText,
-      },
-      {
         title: "Terms & Policy",
         url: "/dashboard/terms-policy",
         icon: ScrollText,
