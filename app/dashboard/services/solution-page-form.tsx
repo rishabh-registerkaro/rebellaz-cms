@@ -508,52 +508,9 @@ export default function SolutionPageForm({
                 placeholder="One-line description of the capability."
               />
 
-              <div>
-                <label className={labelCls}>Bullets</label>
-                {item.bullets.map((b, bi) => (
-                  <div key={bi} className="mb-2 flex items-center gap-2">
-                    <Input
-                      className={inputCls}
-                      value={b}
-                      onChange={(e) =>
-                        setSection("offerings", {
-                          items: setAt(content.offerings.items, i, {
-                            bullets: item.bullets.map((x, xi) => (xi === bi ? e.target.value : x)),
-                          }),
-                        })
-                      }
-                      placeholder={`Point ${bi + 1}`}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Remove point ${bi + 1}`}
-                      onClick={() =>
-                        setSection("offerings", {
-                          items: setAt(content.offerings.items, i, {
-                            bullets: item.bullets.filter((_, xi) => xi !== bi),
-                          }),
-                        })
-                      }
-                    >
-                      <Trash2 className="h-4 w-4 text-red-400" />
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() =>
-                    setSection("offerings", {
-                      items: setAt(content.offerings.items, i, { bullets: [...item.bullets, ""] }),
-                    })
-                  }
-                >
-                  <Plus className="mr-2 h-4 w-4" /> Add point
-                </Button>
-              </div>
+              {/* Bullets are kept in saved content but no longer shown on the site
+                  (see rebel/components/service/service-offerings.tsx), so there is
+                  no input for them here. */}
 
               <ImageField
                 label="Card image"
